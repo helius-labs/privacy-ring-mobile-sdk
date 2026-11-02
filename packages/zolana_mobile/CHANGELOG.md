@@ -2,12 +2,17 @@
 
 Unreleased.
 
+* Use the finalized core ceremony keys for local transfer and merge proofs;
+  upgrade the matching prover and on-chain verifier with this SDK.
+* Refresh the converted-key catalog and the proof fixtures for the final keys.
+* Fix local proving of transfers with 22 or more inputs.
+
 * Target Zolana v0.6.0-alpha and its new shielded-pool program. Add
   `Deployment.devnet()` (devnet-e) and `Deployment.mainnet()` with their Photon,
   Nitro and trusted attestation policies. Select the matching policy for each
   public prover origin; explicit application policies take precedence.
 * Version prepared snapshots for the new program; earlier snapshots are
-  rejected. Transfer and merge proving-key hashes are unchanged.
+  rejected.
 
 * Add `prepareRegistration(enableMerging: true)` to register and select
   `PoseidonCtrV1` in the same message. The default remains register-only.

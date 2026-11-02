@@ -10,9 +10,9 @@ asset_dir="$repo_root/packages/zolana_mobile/example/assets/proving"
 key_name="transfer_confidential_2_2.zopro"
 # The lockfile's prefix; its last part names the key set's directory, as the
 # wallet lays out its key directory.
-key_prefix="proving-keys/8e234b5a589cfb79/"
+key_prefix="proving-keys/78751f5d1c591777/"
 key="$repo_root/.cache/proving/$(basename "$key_prefix")/$key_name"
-key_checksum="8609c8012308c0b9a8b65ea6e2429a77a9120d90b0dc0b9d90669bebf1d8cce2"
+key_checksum="4687bf25f01c6a26d3e1f6e6ea2dc9935e6b9751f935b54927292d1808e839b9"
 request_checksum="38f39f6ac8c23d4d74105bf9dd743213a94470cc46219667d67fd67db1941df3"
 
 sha256() {

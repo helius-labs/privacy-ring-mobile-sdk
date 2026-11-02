@@ -14,7 +14,7 @@ this example hosts them in one process.
 
 Build the app and server from the same mobile SDK checkout, including its two
 Cargo lockfiles, generated bridge and `native/zolana-mobile/zopro-keys.lock`.
-Both use Zolana commit **5cfd7eaed15ef29dc95f6b212cd2844ed0e86860** (#501).
+Both use Zolana commit **3b022ff2fd81c18786caa79fb4754437c6056537**.
 These additions are unreleased; the older mobile pin e30b328a does not expose them.
 Use the eventual reviewed mobile commit containing this example as the client
 pin; the upstream protocol revision alone is not a mobile SDK release.
