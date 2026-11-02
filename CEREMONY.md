@@ -30,6 +30,10 @@ ZOLANA_TEST_KEYS=packages/zolana_mobile/example/assets/proving cargo test --lock
 ZOLANA_TEST_KEY_DIR=.cache/proving cargo test --locked -p zolana-mobile proves_ -- --ignored
 ```
 
+Local validation passed: 106 workspace tests and both opt-in proving tests,
+including all eight transfer/merge request fixtures. The catalog matches all
+41 upstream conversions, and example asset staging passed.
+
 Cluster-dependent wallet flow tests and device/emulator checks are separate
 rollout checks. The linked source commit must remain reachable when this draft
 is merged; if the application PR is squashed, repin to its merged commit and
