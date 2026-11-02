@@ -365,7 +365,7 @@ pub(crate) mod tests {
     }
 
     const RPC_URL: &str = "https://rpc.example/?api-key=secret";
-    const INDEXER_URL: &str = "https://indexer.example/v1/zolana?api-key=secret";
+    const INDEXER_URL: &str = "https://indexer.example/v1/spr?api-key=secret";
 
     fn open(signer: &Keypair, transport: Transport) -> MobileWallet {
         let config = WalletConfig {
@@ -436,7 +436,7 @@ pub(crate) mod tests {
             assert_eq!(request.method, "POST");
             assert_eq!(
                 request.url,
-                format!("https://indexer.example/v1/zolana/{method}?api-key=secret")
+                format!("https://indexer.example/v1/spr/{method}?api-key=secret")
             );
             assert_eq!(request.headers, json_content_type());
         }
@@ -605,9 +605,9 @@ mod proxy_tests {
         for url in [
             "https://dd73hh473h6ha.cloudfront.net",
             "https://d3ky2kt0ntqxt1.cloudfront.net",
-            "https://api.example/v1/zolana?api-key=secret",
+            "https://api.example/v1/spr?api-key=secret",
             "https://proxy.example/zolana",
-            "http://localhost:1234/v1/zolana",
+            "http://localhost:1234/v1/spr",
         ] {
             let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
             assert!(matches!(
@@ -629,9 +629,9 @@ mod proxy_tests {
     fn supplied_policy_attests_through_direct_unified_and_proxy_urls() {
         for url in [
             "https://prover.example",
-            "https://api.example/v1/zolana?api-key=secret",
+            "https://api.example/v1/spr?api-key=secret",
             "https://proxy.example/zolana",
-            "http://localhost:1234/v1/zolana",
+            "http://localhost:1234/v1/spr",
         ] {
             let (transport, requests) = tests::fake(|_| {
                 Ok(TransportResponse {
@@ -651,7 +651,7 @@ mod proxy_tests {
             assert_eq!(sent.origin(), base.origin());
             assert_eq!(
                 sent.path(),
-                format!("{}/tee/v1/attestation", base.path().trim_end_matches('/'))
+                format!("{}/attestation", base.path().trim_end_matches('/'))
             );
             assert_eq!(
                 sent.query_pairs().find(|(key, _)| key == "api-key"),
@@ -697,13 +697,13 @@ mod proxy_tests {
                 })
             });
             let client = transport
-                .configured_prover("http://localhost:1234/v1/zolana".into(), false, None, true)
+                .configured_prover("http://localhost:1234/v1/spr".into(), false, None, true)
                 .unwrap();
             assert!(client.prove(&Merge).is_err());
             let requests = requests.lock().unwrap();
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].method, "POST");
-            assert!(requests[0].url.ends_with("/v1/zolana/prove/merge_8_1"));
+            assert!(requests[0].url.ends_with("/v1/spr/prove/merge_8_1"));
         }
     }
     #[test]
@@ -717,7 +717,7 @@ mod proxy_tests {
         });
         let client = transport
             .configured_prover(
-                "http://localhost:1234/v1/zolana".into(),
+                "http://localhost:1234/v1/spr".into(),
                 true,
                 Some(POLICY),
                 true,
@@ -727,6 +727,6 @@ mod proxy_tests {
         assert!(client.prove(&Merge).is_err());
         let requests = requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
-        assert!(requests[0].url.contains("/tee/v1/attestation?nonce="));
+        assert!(requests[0].url.contains("/attestation?nonce="));
     }
 }

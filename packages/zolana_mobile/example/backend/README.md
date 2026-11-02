@@ -98,9 +98,9 @@ Every endpoint requires `x-sf-auth`. The demo uses one shared bearer token.
 | `POST /runs/{id}/merges` | `{ "slot": 0, "message": "<base64 PreparedTransaction.message>" }`; returns `signature`, `accepted`, `outcome` |
 | `GET /runs/{id}` | Returns persisted run and chain signature statuses, in slot order |
 | `POST /runs/{id}/close` | Send `{}`; after expiry, closes the cache and returns rent to the sponsor |
-| `GET /v1/zolana/tee/v1/attestation?nonce=…` | Passes through attestation and nonce |
-| `POST /v1/zolana/prove/merge_8_1` | Encrypted synchronous or queued merge proof; also supports `merge_24_1` and `merge_52_1` |
-| `GET /v1/zolana/prove/merge_8_1/status?jobId=…` | Encrypted job status/result; same three merge shapes |
+| `GET /v1/spr/attestation?nonce=…` | Passes through attestation and nonce |
+| `POST /v1/spr/prove/merge_8_1` | Encrypted synchronous or queued merge proof; also supports `merge_24_1` and `merge_52_1` |
+| `GET /v1/spr/prove/merge_8_1/status?jobId=…` | Encrypted job status/result; same three merge shapes |
 
 `target` contains `sponsor`, `nonce`, `treeId`, `expiresAt` (Unix seconds),
 `slot`, `maxPriorityFeeLamports` and `computeUnitLimit`. Use the assigned slot
@@ -136,7 +136,7 @@ It does not automatically call cleanup or delete journal history.
 
 ## TEE and authentication
 
-Mobile uses `proverUrl = <backend>/v1/zolana`, `requireProverTee: true` and
+Mobile uses `proverUrl = <backend>/v1/spr`, `requireProverTee: true` and
 `proverSyncOnly: false`. Requiring TEE explicitly matters for a localhost proxy,
 where upstream otherwise permits plaintext. The custom transport scopes
 `x-sf-auth` to the proxy origin and path, preserves ciphertext and disables
@@ -144,8 +144,8 @@ redirects for authenticated requests. RPC/indexer/key requests do not get it.
 
 The proxy forwards the method, relative route, query, encrypted body and TEE
 headers unchanged. POST carries ciphertext in its octet-stream **body**, with
-`Zolana-Tee`, `Zolana-Tee-Enc` and either `X-Sync: true` or `X-Async: true`;
-encrypted GET uses the `Zolana-Tee-Ciphertext` header. Responses preserve the
+`Spr-Tee`, `Spr-Tee-Enc` and either `X-Sync: true` or `X-Async: true`;
+encrypted GET uses the `Spr-Tee-Ciphertext` header. Responses preserve the
 TEE headers and status. Rewriting the route or query would break request
 authentication. Only the three merge shapes and their status routes are exposed;
 transfer-proof routes remain absent.

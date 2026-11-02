@@ -2057,7 +2057,7 @@ mod tests {
     pub(super) fn config() -> WalletConfig {
         WalletConfig {
             rpc_url: "https://rpc.example".to_string(),
-            indexer_url: "https://indexer.example/v1/zolana".to_string(),
+            indexer_url: "https://indexer.example/v1/spr".to_string(),
             proving_key_dir: std::env::temp_dir().display().to_string(),
             proving_key_url: None,
             proving_key_catalog: None,
@@ -3004,7 +3004,7 @@ mod tests {
     fn errors_mask_api_keys_in_urls() {
         let config = WalletConfig {
             rpc_url: "https://rpc.example/?api-key=secret".to_string(),
-            indexer_url: "https://indexer.example/v1/zolana?api-key=secret".to_string(),
+            indexer_url: "https://indexer.example/v1/spr?api-key=secret".to_string(),
             ..config()
         };
         let mut wallet = open_with(&Keypair::new(), config).unwrap();
@@ -3277,7 +3277,7 @@ mod tests {
         let policy = Some(include_str!("../../../example/assets/policies/devnet.json"));
         assert!(tee("https://prover.example", policy));
         assert!(tee(
-            "https://beta-devnet.helius-rpc.com/v1/zolana?api-key=k",
+            "https://beta-devnet.helius-rpc.com/v1/spr?api-key=k",
             policy
         ));
         assert!(!tee("http://127.0.0.1:3001", None));

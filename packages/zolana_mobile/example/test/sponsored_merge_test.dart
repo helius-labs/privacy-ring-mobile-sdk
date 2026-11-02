@@ -29,7 +29,7 @@ void main() {
           request.response.statusCode = 302;
           request.response.headers.set('location', '/unexpected');
         } else {
-          request.response.headers.set('zolana-tee', '1');
+          request.response.headers.set('spr-tee', '1');
           request.response.add([8, 9, 10]);
         }
         await request.response.close();
@@ -47,19 +47,19 @@ void main() {
           method: 'POST',
           url: 'http://127.0.0.1:${server.port}$path',
           headers: {
-            'zolana-tee': '1',
-            'zolana-tee-enc': 'opaque',
+            'spr-tee': '1',
+            'spr-tee-enc': 'opaque',
             'x-sync': 'true',
           },
           body: Uint8List.fromList([1, 2, 3]),
           timeoutMs: 1000,
         ),
       );
-      final proof = await send('/v1/zolana/prove/merge_8_1');
+      final proof = await send('/v1/spr/prove/merge_8_1');
       expect(proof.body, [8, 9, 10]);
-      expect(proof.headers['zolana-tee'], '1');
+      expect(proof.headers['spr-tee'], '1');
       await send('/rpc');
-      final redirect = await send('/v1/zolana/redirect');
+      final redirect = await send('/v1/spr/redirect');
       expect(redirect.status, 302);
       expect(seen.map((r) => r.auth), ['example-auth', null, 'example-auth']);
       expect(seen.every((r) => r.body.join(',') == '1,2,3'), isTrue);
@@ -75,16 +75,16 @@ void main() {
         expect(request.method, 'GET');
         expect(
           request.uri.toString(),
-          '/v1/zolana/prove/merge_24_1/status?jobId=job%2F1',
+          '/v1/spr/prove/merge_24_1/status?jobId=job%2F1',
         );
         expect(request.headers.value('x-sf-auth'), 'example-auth');
-        expect(request.headers.value('zolana-tee-enc'), 'enc');
-        expect(request.headers.value('zolana-tee-ciphertext'), '010203');
+        expect(request.headers.value('spr-tee-enc'), 'enc');
+        expect(request.headers.value('spr-tee-ciphertext'), '010203');
         expect(
           await request.fold<List<int>>([], (all, chunk) => all..addAll(chunk)),
           isEmpty,
         );
-        request.response.headers.set('zolana-tee', 'v1');
+        request.response.headers.set('spr-tee', 'v1');
         request.response.add([4, 5, 6]);
         await request.response.close();
       });
@@ -101,16 +101,16 @@ void main() {
           method: 'GET',
           url: '${backend.proverUrl}/prove/merge_24_1/status?jobId=job%2F1',
           headers: {
-            'zolana-tee': 'v1',
-            'zolana-tee-enc': 'enc',
-            'zolana-tee-ciphertext': '010203',
+            'spr-tee': 'v1',
+            'spr-tee-enc': 'enc',
+            'spr-tee-ciphertext': '010203',
           },
           body: Uint8List(0),
           timeoutMs: 1000,
         ),
       );
       expect(response.status, 200);
-      expect(response.headers['zolana-tee'], 'v1');
+      expect(response.headers['spr-tee'], 'v1');
       expect(response.body, [4, 5, 6]);
     },
   );

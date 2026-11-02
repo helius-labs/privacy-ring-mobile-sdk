@@ -2,6 +2,9 @@
 
 Unreleased.
 
+* Follow the Helius gateway rename: prover and indexer URLs use `/v1/spr`,
+  attestation is `/attestation`, and encrypted prover requests carry the
+  `Spr-Tee`, `Spr-Tee-Enc` and `Spr-Tee-Ciphertext` headers.
 * Target Zolana v0.6.0-alpha and its new shielded-pool program. Add
   `Deployment.devnet()` (devnet-e) and `Deployment.mainnet()` with their Photon,
   Nitro and trusted attestation policies. Select the matching policy for each

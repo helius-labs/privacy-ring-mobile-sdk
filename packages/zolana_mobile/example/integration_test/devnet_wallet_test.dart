@@ -283,13 +283,13 @@ void main() {
     );
     // The prover attests before it gets the encrypted request; nothing else
     // is fetched, no proving key among it.
-    expect(transport.sent, contains('GET /tee/v1/attestation'));
+    expect(transport.sent, contains('GET /attestation'));
     expect(
       transport.sent.where(
         (r) =>
             r.startsWith('GET ') &&
             !_isProof(r) &&
-            r != 'GET /tee/v1/attestation',
+            r != 'GET /attestation',
       ),
       isEmpty,
     );
@@ -435,7 +435,7 @@ void main() {
       transport.sent.where((r) => r.startsWith('POST ') && _isProof(r)),
       hasLength(1),
     );
-    expect(transport.sent, contains('GET /tee/v1/attestation'));
+    expect(transport.sent, contains('GET /attestation'));
   }, skip: !_enabled);
 }
 

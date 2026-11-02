@@ -700,15 +700,15 @@ await wallet.spend(
   completes or fails. Set `WalletConfig.proverSyncOnly: true` when the backend
   supports synchronous responses only; queued or asynchronous fallbacks then
   fail without sending a status-polling request.
-  The Helius gateway (`https://*.helius-rpc.com/v1/zolana`) routes proofs
+  The Helius gateway (`https://*.helius-rpc.com/v1/spr`) routes proofs
   by their body, so for it the paths are `/prove` and `/prove/status`.
 - **Attestation**: from every prover but a loopback one, the Helius gateway
   included, the wallet first fetches
-  `GET <proverUrl>/tee/v1/attestation?nonce=<hex>`, checks that the prover
+  `GET <proverUrl>/attestation?nonce=<hex>`, checks that the prover
   matches the application's supplied policy, and encrypts every
-  request body to it, with `Zolana-Tee` and `Zolana-Tee-Enc` headers.
+  request body to it, with `Spr-Tee` and `Spr-Tee-Enc` headers.
   POST ciphertext is in the octet-stream body; encrypted GET uses the
-  `Zolana-Tee-Ciphertext` header. Each request is bound to its method and
+  `Spr-Tee-Ciphertext` header. Each request is bound to its method and
   its route below `proverUrl`. A remote prover that does not attest fails
   every remote spend: no setting sends it plaintext. Set
   `requireProverTee: true` to enforce this for a localhost proxy too.
@@ -720,7 +720,7 @@ await wallet.spend(
   and the policy's deployment measurements and key/GPU constraints.
 - **The application's backend** serves these routes, the attestation
   included, as a proxy of an attested Zolana prover: it forwards the body
-  and the `X-Sync` / `X-Async` and `Zolana-Tee*` headers to the same route
+  and the `X-Sync` / `X-Async` and `Spr-Tee*` headers to the same route
   of the prover, and returns the prover's status, headers and body as they
   are. The response carries the proof's `provingKeySha256`, which the
   wallet checks. A Zolana prover that serves these routes can also be
