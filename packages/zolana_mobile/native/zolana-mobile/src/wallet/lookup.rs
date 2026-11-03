@@ -1,7 +1,7 @@
 //! Signature-scoped activity, using the protocol's existing readers. No
 //! transaction or nullifier history queries belong on this path.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use solana_rpc_client_api::request::RpcRequest;
 use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
@@ -16,7 +16,7 @@ use zolana_transaction::{
 };
 
 use super::*;
-use crate::activity::{TransactionLookup, TransactionLookupStatus as Status};
+use crate::activity::{TransactionLookup, TransactionLookupStatus as Status, TransactionOutput};
 
 type Confirmed = EncodedConfirmedTransactionWithStatusMeta;
 
@@ -50,6 +50,14 @@ pub(super) fn transaction(
         .as_ref()
         .map(|tx| tx.slot)
         .or_else(|| indexed.transactions.first().map(|tx| tx.transaction.slot));
+    let block_time = confirmed.as_ref().and_then(|tx| tx.block_time);
+    let fee = confirmed
+        .as_ref()
+        .and_then(|tx| tx.transaction.meta.as_ref())
+        .map(|meta| meta.fee);
+    if let (Some(slot), Some(time)) = (slot, block_time) {
+        wallet.block_times().insert(slot, time);
+    }
     for event in indexed.transactions {
         let tx = event.transaction;
         if tx.tx_signature != signature
@@ -60,20 +68,40 @@ pub(super) fn transaction(
         }
         transactions.push(tx);
     }
-    let result = |status, entries| TransactionLookup {
-        status,
-        entries,
-        slot,
-        indexed_slot: indexed.context.slot,
+    let result = |status, mut entries: Vec<ActivityEntry>, outputs: Vec<TransactionOutput>| {
+        for entry in &mut entries {
+            entry.block_time = block_time;
+            if matches!(
+                entry.kind,
+                activity::ActivityKind::Sent | activity::ActivityKind::Withdrawal
+            ) {
+                entry.recipients = outputs
+                    .iter()
+                    .filter(|output| !output.is_public && output.mint == entry.mint)
+                    .map(|output| output.recipient.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+        }
+        TransactionLookup {
+            status,
+            entries,
+            outputs,
+            slot,
+            block_time,
+            fee,
+            indexed_slot: indexed.context.slot,
+        }
     };
     if slot.is_none() {
-        return Ok(result(Status::NotFound, vec![]));
+        return Ok(result(Status::NotFound, vec![], vec![]));
     }
     if slot.is_some_and(|slot| slot > indexed.context.slot) {
-        return Ok(result(Status::PendingIndexing, vec![]));
+        return Ok(result(Status::PendingIndexing, vec![], vec![]));
     }
     if transactions.is_empty() {
-        return Ok(result(Status::Ready, vec![]));
+        return Ok(result(Status::Ready, vec![], vec![]));
     }
     if confirmed
         .as_ref()
@@ -111,16 +139,16 @@ pub(super) fn transaction(
         )?;
     }
     match details {
-        Details::Complete(entries) => {
+        Details::Complete(entries, outputs) => {
             wallet.assets().remember_registry(registry);
-            Ok(result(Status::Ready, entries))
+            Ok(result(Status::Ready, entries, outputs))
         }
-        Details::Incomplete | Details::NeedAssets => Ok(result(Status::Incomplete, vec![])),
+        Details::Incomplete | Details::NeedAssets => Ok(result(Status::Incomplete, vec![], vec![])),
     }
 }
 
 enum Details {
-    Complete(Vec<ActivityEntry>),
+    Complete(Vec<ActivityEntry>, Vec<TransactionOutput>),
     NeedAssets,
     Incomplete,
 }
@@ -158,6 +186,7 @@ impl MobileWallet {
             .map(|utxo| (utxo.utxo_hash, utxo))
             .collect();
         let mut movements = BTreeMap::<Pubkey, Movement>::new();
+        let mut outputs = Vec::new();
         let mut counted = HashSet::new();
         let mut spends = HashSet::new();
         let own_tag = self.address.signing_pubkey.confidential_view_tag()?;
@@ -332,6 +361,12 @@ impl MobileWallet {
                     return Ok(Details::Incomplete);
                 }
                 *net.entry(note.asset.asset).or_default() += i128::from(note.amount);
+                outputs.push(TransactionOutput {
+                    recipient: record.owner.to_string(),
+                    mint: mint_name(&note.asset.asset),
+                    amount: note.amount,
+                    is_public: false,
+                });
             }
             let Some(settlements) =
                 settlement_accounts(&cx.data.interface_transfers, cx.data.circuit, &cx.accounts)
@@ -343,6 +378,9 @@ impl MobileWallet {
                 let mint = leg
                     .mint_account_position()
                     .map_or(SOL_MINT, |i| settlements[offset + i]);
+                // SOL: [interface, recipient]. SPL withdrawal:
+                // [cpi_authority, mint, interface, token_account, program].
+                let recipient = settlements[offset + if leg.is_spl() { 3 } else { 1 }];
                 offset += leg.settlement_account_count();
                 if assets.asset_id(&mint).is_err() {
                     if discover {
@@ -358,6 +396,14 @@ impl MobileWallet {
                 } else {
                     i128::from(leg.amount())
                 };
+                if !leg.is_deposit() {
+                    outputs.push(TransactionOutput {
+                        recipient: recipient.to_string(),
+                        mint: mint_name(&mint),
+                        amount: leg.amount(),
+                        is_public: true,
+                    });
+                }
             }
             for mint in received.keys() {
                 net.entry(*mint).or_default();
@@ -413,7 +459,7 @@ impl MobileWallet {
                 assets,
             )?);
         }
-        Ok(Details::Complete(entries))
+        Ok(Details::Complete(entries, outputs))
     }
 }
 

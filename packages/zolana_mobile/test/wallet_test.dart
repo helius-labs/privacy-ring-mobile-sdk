@@ -250,6 +250,7 @@ class FakeWallet implements MobileWallet {
   TransactionLookup lookup = TransactionLookup(
     status: TransactionLookupStatus.ready,
     entries: const [],
+    outputs: const [],
     indexedSlot: BigInt.zero,
   );
   WalletError? lookupError;
@@ -547,14 +548,56 @@ openWallet() async {
 Matcher throwsWalletError(WalletError error) => throwsA(error);
 
 void main() {
+  test('activity rows compare recipient lists by value across reads', () {
+    ActivityEntry row({List<String>? recipients}) => ActivityEntry(
+      kind: ActivityKind.sent,
+      amount: BigInt.from(20),
+      signature: 'signature',
+      slot: BigInt.from(10),
+      blockTime: 1800000000,
+      index: BigInt.one,
+      recipients: recipients ?? [],
+    );
+    final first = row(recipients: ['recipient']);
+    final second = row(recipients: ['recipient']);
+    expect(first, second);
+    expect(first.hashCode, second.hashCode);
+    expect(row(recipients: ['other']), isNot(first));
+    expect(row(), row());
+    final withoutRecipients = ActivityEntry(
+      kind: ActivityKind.received,
+      amount: BigInt.one,
+      signature: 'signature',
+      slot: BigInt.from(10),
+      index: BigInt.one,
+    );
+    expect(withoutRecipients.recipients, isEmpty);
+  });
+
   test(
-    'signature lookup preserves rows and statuses without requesting activity',
+    'signature lookup preserves rows, outputs, metadata and statuses',
     () async {
       final (wallet, native, _, _) = await openWallet();
       for (final status in TransactionLookupStatus.values) {
         native.lookup = TransactionLookup(
           status: status,
           entries: const [],
+          outputs: status == TransactionLookupStatus.ready
+              ? [
+                  TransactionOutput(
+                    recipient: 'recipient',
+                    amount: BigInt.from(20),
+                    isPublic: false,
+                  ),
+                  TransactionOutput(
+                    recipient: 'withdrawal',
+                    amount: BigInt.from(30),
+                    isPublic: true,
+                  ),
+                ]
+              : const [],
+          blockTime: 1800000000,
+          fee: BigInt.from(5000),
           indexedSlot: BigInt.from(90),
           slot: BigInt.from(100),
         );

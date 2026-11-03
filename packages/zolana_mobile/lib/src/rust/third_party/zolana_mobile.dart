@@ -66,7 +66,10 @@ abstract class MobileWallet implements RustOpaqueInterface {
   ///
   /// The indexer does not say which spends were withdrawals: a spend whose
   /// outputs are all this wallet's own is listed as a withdrawal, one with
-  /// another wallet's output as sent.
+  /// another wallet's output as sent. Non-own private recipient tags are
+  /// included without extra registry or transaction reads. Block times are
+  /// filled from the RPC once per uncached slot, with bounded concurrency;
+  /// an unavailable timestamp stays `None` without failing the history read.
   Future<List<ActivityEntry>> activity();
 
   /// Spendable private balances, read from the indexer now: one per asset
@@ -325,6 +328,9 @@ abstract class MobileWallet implements RustOpaqueInterface {
   ///
   /// A cold wallet can read its default-ring outgoing transfers and public
   /// withdrawals using its transaction viewing key, without old input notes.
+  /// `outputs` keeps each private payment and public withdrawal separate,
+  /// excluding own change and padding. Block time and network fee come from
+  /// the same confirmed RPC read, including when indexing is still pending.
   /// `Incomplete` reports unsupported spends or missing metadata rather than
   /// returning an incorrect empty result. Recipient-tagged dummy padding
   /// (possible on an exact-balance private send) is also incomplete: a cold
@@ -441,47 +447,25 @@ abstract class Transport implements RustOpaqueInterface {
 /// otherwise. `mint` is `None` for SOL. Sent and withdrawn amounts are what
 /// left the private balance, change excluded; a self transfer's is what it
 /// spent.
-class ActivityEntry {
-  final ActivityKind kind;
-  final String? mint;
-  final BigInt amount;
-  final String signature;
-  final BigInt slot;
-
-  /// Stable asset-row index: the pool's asset id (1 for SOL), not the row's
-  /// position in a list or the TS SDK's output-leaf index. Together with
-  /// `signature` and `slot`, this identifies the same row across reads.
-  final BigInt index;
-
-  const ActivityEntry({
-    required this.kind,
-    this.mint,
-    required this.amount,
-    required this.signature,
-    required this.slot,
-    required this.index,
-  });
-
-  @override
-  int get hashCode =>
-      kind.hashCode ^
-      mint.hashCode ^
-      amount.hashCode ^
-      signature.hashCode ^
-      slot.hashCode ^
-      index.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ActivityEntry &&
-          runtimeType == other.runtimeType &&
-          kind == other.kind &&
-          mint == other.mint &&
-          amount == other.amount &&
-          signature == other.signature &&
-          slot == other.slot &&
-          index == other.index;
+///
+/// The optional block time is in Unix seconds. Outgoing recipients are sorted,
+/// unique private addresses: activity/overview use signature-wide tags, while
+/// transaction lookup uses verified outputs for this asset. See
+/// `TransactionLookup.outputs` for public destinations and individual amounts.
+/// The stable `index` is the pool's asset id (1 for SOL); together with
+/// `signature` and `slot`, it identifies the same asset row across reads.
+@freezed
+sealed class ActivityEntry with _$ActivityEntry {
+  const factory ActivityEntry({
+    required ActivityKind kind,
+    String? mint,
+    required BigInt amount,
+    required String signature,
+    required BigInt slot,
+    PlatformInt64? blockTime,
+    @Default([]) List<String> recipients,
+    required BigInt index,
+  }) = _ActivityEntry;
 }
 
 /// What a history entry did, from this wallet's side.
@@ -1008,11 +992,24 @@ class TokenBalance {
 }
 
 /// A signature-scoped read. Network failures throw; they are never empty
-/// wallet results. Only `ready` may carry entries.
+/// wallet results. Only `ready` may carry entries and outputs. Chain metadata
+/// may be available in other statuses too.
 class TransactionLookup {
   final TransactionLookupStatus status;
   final List<ActivityEntry> entries;
+
+  /// Each outgoing private payment and public withdrawal, without merging
+  /// payments by recipient or asset. Empty for incoming and self transfers.
+  /// Private payments precede public withdrawals within each event.
+  final List<TransactionOutput> outputs;
   final BigInt? slot;
+
+  /// Estimated block production time, in Unix seconds, from `getTransaction`.
+  final PlatformInt64? blockTime;
+
+  /// Whole Solana transaction network fee in lamports, from `meta.fee`,
+  /// including any priority fee. Not a privacy fee or an asset-row amount.
+  final BigInt? fee;
 
   /// Highest slot the indexer had persisted for this lookup.
   final BigInt indexedSlot;
@@ -1020,13 +1017,22 @@ class TransactionLookup {
   const TransactionLookup({
     required this.status,
     required this.entries,
+    this.outputs = const [],
     this.slot,
+    this.blockTime,
+    this.fee,
     required this.indexedSlot,
   });
 
   @override
   int get hashCode =>
-      status.hashCode ^ entries.hashCode ^ slot.hashCode ^ indexedSlot.hashCode;
+      status.hashCode ^
+      entries.hashCode ^
+      outputs.hashCode ^
+      slot.hashCode ^
+      blockTime.hashCode ^
+      fee.hashCode ^
+      indexedSlot.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1035,7 +1041,10 @@ class TransactionLookup {
           runtimeType == other.runtimeType &&
           status == other.status &&
           entries == other.entries &&
+          outputs == other.outputs &&
           slot == other.slot &&
+          blockTime == other.blockTime &&
+          fee == other.fee &&
           indexedSlot == other.indexedSlot;
 }
 
@@ -1055,6 +1064,44 @@ enum TransactionLookupStatus {
   /// wallet row from its format, ciphertexts or available RPC metadata.
   /// No partial entries are returned and no history scan is attempted.
   incomplete,
+}
+
+/// One outgoing payment, with change and padding excluded. Private outputs
+/// and public withdrawals remain separate, even when they pay the same
+/// address. An application's privacy fee is an ordinary private output to
+/// its collector; the SDK does not infer which payment is a fee.
+class TransactionOutput {
+  /// Destination Solana address. For a public SPL withdrawal this is the
+  /// settlement token account, not its owner.
+  final String recipient;
+
+  /// `None` for SOL. Amounts are in base units.
+  final String? mint;
+  final BigInt amount;
+
+  /// `true` for a public withdrawal, `false` for a private note.
+  final bool isPublic;
+
+  const TransactionOutput({
+    required this.recipient,
+    this.mint,
+    required this.amount,
+    required this.isPublic,
+  });
+
+  @override
+  int get hashCode =>
+      recipient.hashCode ^ mint.hashCode ^ amount.hashCode ^ isPublic.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransactionOutput &&
+          runtimeType == other.runtimeType &&
+          recipient == other.recipient &&
+          mint == other.mint &&
+          amount == other.amount &&
+          isPublic == other.isPublic;
 }
 
 /// Why the application's transport has no response.

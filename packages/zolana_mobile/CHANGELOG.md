@@ -2,6 +2,15 @@
 
 Unreleased.
 
+* Return `blockTime` (Unix seconds) and `fee` (network fee in lamports) from
+  transaction lookup's existing RPC response. `outputs` lists each outgoing
+  private payment and public withdrawal separately, with recipient, mint,
+  amount and `isPublic`, excluding change and padding.
+* Add `ActivityEntry.blockTime` and private `recipients` to activity and overview.
+  Timestamps use bounded, per-slot RPC reads and cache successful results for
+  the open wallet; unavailable times stay null. Recipient tags need no extra
+  RPC reads. The existing per-asset rows and their identities are preserved.
+
 * Pin merged Zolana #521 (SDK 0.8.0-alpha). Gateways now use `/v1/spr`,
   `/attestation` and `Spr-Tee*` headers; update backend proxies together.
 * Expose `proverTeeNetwork` for SDK-verified signed mainnet/devnet policies.

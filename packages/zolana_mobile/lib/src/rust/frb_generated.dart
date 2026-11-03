@@ -2762,15 +2762,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ActivityEntry dco_decode_activity_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return ActivityEntry(
       kind: dco_decode_activity_kind(arr[0]),
       mint: dco_decode_opt_String(arr[1]),
       amount: dco_decode_u_64(arr[2]),
       signature: dco_decode_String(arr[3]),
       slot: dco_decode_u_64(arr[4]),
-      index: dco_decode_u_64(arr[5]),
+      blockTime: dco_decode_opt_box_autoadd_i_64(arr[5]),
+      recipients: dco_decode_list_String(arr[6]),
+      index: dco_decode_u_64(arr[7]),
     );
   }
 
@@ -2818,6 +2820,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CacheTarget dco_decode_box_autoadd_cache_target(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_cache_target(raw);
+  }
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_i_64(raw);
   }
 
   @protected
@@ -3013,6 +3021,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TransactionOutput> dco_decode_list_transaction_output(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_transaction_output).toList();
+  }
+
+  @protected
   LocalProofResult dco_decode_local_proof_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -3110,6 +3124,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
   }
 
   @protected
@@ -3315,13 +3335,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionLookup dco_decode_transaction_lookup(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return TransactionLookup(
       status: dco_decode_transaction_lookup_status(arr[0]),
       entries: dco_decode_list_activity_entry(arr[1]),
-      slot: dco_decode_opt_box_autoadd_u_64(arr[2]),
-      indexedSlot: dco_decode_u_64(arr[3]),
+      outputs: dco_decode_list_transaction_output(arr[2]),
+      slot: dco_decode_opt_box_autoadd_u_64(arr[3]),
+      blockTime: dco_decode_opt_box_autoadd_i_64(arr[4]),
+      fee: dco_decode_opt_box_autoadd_u_64(arr[5]),
+      indexedSlot: dco_decode_u_64(arr[6]),
     );
   }
 
@@ -3329,6 +3352,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionLookupStatus dco_decode_transaction_lookup_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return TransactionLookupStatus.values[raw as int];
+  }
+
+  @protected
+  TransactionOutput dco_decode_transaction_output(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return TransactionOutput(
+      recipient: dco_decode_String(arr[0]),
+      mint: dco_decode_opt_String(arr[1]),
+      amount: dco_decode_u_64(arr[2]),
+      isPublic: dco_decode_bool(arr[3]),
+    );
   }
 
   @protected
@@ -3902,6 +3939,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_amount = sse_decode_u_64(deserializer);
     var var_signature = sse_decode_String(deserializer);
     var var_slot = sse_decode_u_64(deserializer);
+    var var_blockTime = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_recipients = sse_decode_list_String(deserializer);
     var var_index = sse_decode_u_64(deserializer);
     return ActivityEntry(
       kind: var_kind,
@@ -3909,6 +3948,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       amount: var_amount,
       signature: var_signature,
       slot: var_slot,
+      blockTime: var_blockTime,
+      recipients: var_recipients,
       index: var_index,
     );
   }
@@ -3960,6 +4001,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_cache_target(deserializer));
+  }
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_64(deserializer));
   }
 
   @protected
@@ -4250,6 +4297,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TransactionOutput> sse_decode_list_transaction_output(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TransactionOutput>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_transaction_output(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   LocalProofResult sse_decode_local_proof_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_proofJson = sse_decode_String(deserializer);
@@ -4370,6 +4431,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_bool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_64(deserializer));
     } else {
       return null;
     }
@@ -4654,12 +4726,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_status = sse_decode_transaction_lookup_status(deserializer);
     var var_entries = sse_decode_list_activity_entry(deserializer);
+    var var_outputs = sse_decode_list_transaction_output(deserializer);
     var var_slot = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_blockTime = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_fee = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_indexedSlot = sse_decode_u_64(deserializer);
     return TransactionLookup(
       status: var_status,
       entries: var_entries,
+      outputs: var_outputs,
       slot: var_slot,
+      blockTime: var_blockTime,
+      fee: var_fee,
       indexedSlot: var_indexedSlot,
     );
   }
@@ -4671,6 +4749,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return TransactionLookupStatus.values[inner];
+  }
+
+  @protected
+  TransactionOutput sse_decode_transaction_output(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_recipient = sse_decode_String(deserializer);
+    var var_mint = sse_decode_opt_String(deserializer);
+    var var_amount = sse_decode_u_64(deserializer);
+    var var_isPublic = sse_decode_bool(deserializer);
+    return TransactionOutput(
+      recipient: var_recipient,
+      mint: var_mint,
+      amount: var_amount,
+      isPublic: var_isPublic,
+    );
   }
 
   @protected
@@ -5343,6 +5438,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.amount, serializer);
     sse_encode_String(self.signature, serializer);
     sse_encode_u_64(self.slot, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.blockTime, serializer);
+    sse_encode_list_String(self.recipients, serializer);
     sse_encode_u_64(self.index, serializer);
   }
 
@@ -5397,6 +5494,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_cache_target(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self, serializer);
   }
 
   @protected
@@ -5683,6 +5789,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_transaction_output(
+    List<TransactionOutput> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_transaction_output(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_local_proof_result(
     LocalProofResult self,
     SseSerializer serializer,
@@ -5793,6 +5911,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_bool(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_64(self, serializer);
     }
   }
 
@@ -6033,7 +6164,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_transaction_lookup_status(self.status, serializer);
     sse_encode_list_activity_entry(self.entries, serializer);
+    sse_encode_list_transaction_output(self.outputs, serializer);
     sse_encode_opt_box_autoadd_u_64(self.slot, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.blockTime, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.fee, serializer);
     sse_encode_u_64(self.indexedSlot, serializer);
   }
 
@@ -6044,6 +6178,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_transaction_output(
+    TransactionOutput self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.recipient, serializer);
+    sse_encode_opt_String(self.mint, serializer);
+    sse_encode_u_64(self.amount, serializer);
+    sse_encode_bool(self.isPublic, serializer);
   }
 
   @protected
@@ -6466,7 +6612,10 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   ///
   /// The indexer does not say which spends were withdrawals: a spend whose
   /// outputs are all this wallet's own is listed as a withdrawal, one with
-  /// another wallet's output as sent.
+  /// another wallet's output as sent. Non-own private recipient tags are
+  /// included without extra registry or transaction reads. Block times are
+  /// filled from the RPC once per uncached slot, with bounded concurrency;
+  /// an unavailable timestamp stays `None` without failing the history read.
   Future<List<ActivityEntry>> activity() =>
       RustLib.instance.api.zolanaMobileMobileWalletActivity(that: this);
 
@@ -6765,6 +6914,9 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   ///
   /// A cold wallet can read its default-ring outgoing transfers and public
   /// withdrawals using its transaction viewing key, without old input notes.
+  /// `outputs` keeps each private payment and public withdrawal separate,
+  /// excluding own change and padding. Block time and network fee come from
+  /// the same confirmed RPC read, including when indexing is still pending.
   /// `Incomplete` reports unsupported spends or missing metadata rather than
   /// returning an incorrect empty result. Recipient-tagged dummy padding
   /// (possible on an exact-balance private send) is also incomplete: a cold

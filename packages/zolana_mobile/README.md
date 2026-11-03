@@ -193,6 +193,20 @@ await wallet.spend(
   Solana transaction, decrypts only that signature's events, and returns every
   asset row. It may read asset and recipient registrations, but never calls
   the transaction/UTXO history pagers or warms the spendable-note cache.
+  `result.blockTime` is Unix seconds and `result.fee` is the whole Solana
+  transaction's network fee in lamports, including priority fees. Both come
+  from the existing `getTransaction` response and can be `null` when that
+  metadata is unavailable. They may be present while indexing is pending.
+
+  `result.outputs` keeps each outgoing payment separate: `recipient`, `mint`
+  (`null` for SOL), `amount` in base units, and `isPublic`. Private payments
+  have `isPublic: false`; public withdrawals have `true`, including when the
+  same transaction also pays a private privacy fee. Identify an application's
+  fee by its collector address; the SDK does not infer it from the amount.
+  Own change and padding are excluded, and payments to the same recipient
+  are not combined. Public SPL recipients are the actual settlement token
+  accounts, not their wallet owners. Incoming payments and self transfers
+  return an empty outgoing list. Only `ready` carries rows or outputs.
 
   ```dart
   final result = await wallet.transaction(signature);
@@ -223,6 +237,23 @@ await wallet.spend(
   SOL), so it does not move when rows are filtered or another asset is added.
   Mobile rows aggregate one asset per signature; this index is not the TS
   SDK's per-output leaf index and should not be compared numerically with it.
+
+  Rows also carry `blockTime` in Unix seconds. `activity()` and `overview()`
+  fill it with `getBlockTime` for each distinct uncached slot, at most eight
+  requests concurrently. Successful timestamps are cached for the open wallet,
+  including those learned by `transaction()`. Missing or failed time lookups
+  leave `null` and are retried on a later read; balances and amounts still
+  return normally. The indexer does not need to change.
+
+  For outgoing rows, `recipients` contains sorted, unique non-own private
+  recipient addresses. Activity and overview read these from published tags
+  with no extra registry or transaction calls; ring discovery tags are omitted
+  because they are not wallet addresses. Tags do not identify assets, so a
+  multi-asset signature repeats its recipients on each outgoing activity row.
+  Transaction lookup can scope these addresses to the row's asset using its
+  verified outputs. Use `result.outputs` for individual amounts and public
+  destinations. The aggregated `kind` remains `sent` when any private payment
+  goes to another wallet, including a withdrawal's fee collector.
 
 - **What is public**: a deposit shows this account, the asset and the amount.
   A spend shows this account, the asset, each public output's recipient and

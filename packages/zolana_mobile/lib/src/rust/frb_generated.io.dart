@@ -205,6 +205,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CacheTarget dco_decode_box_autoadd_cache_target(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
   ProverTeeNetwork dco_decode_box_autoadd_prover_tee_network(dynamic raw);
 
   @protected
@@ -295,6 +298,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TokenBalance> dco_decode_list_token_balance(dynamic raw);
 
   @protected
+  List<TransactionOutput> dco_decode_list_transaction_output(dynamic raw);
+
+  @protected
   LocalProofResult dco_decode_local_proof_result(dynamic raw);
 
   @protected
@@ -320,6 +326,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
   ProverTeeNetwork? dco_decode_opt_box_autoadd_prover_tee_network(dynamic raw);
@@ -386,6 +395,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TransactionLookupStatus dco_decode_transaction_lookup_status(dynamic raw);
+
+  @protected
+  TransactionOutput dco_decode_transaction_output(dynamic raw);
 
   @protected
   TransportFailure dco_decode_transport_failure(dynamic raw);
@@ -582,6 +594,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CacheTarget sse_decode_box_autoadd_cache_target(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   ProverTeeNetwork sse_decode_box_autoadd_prover_tee_network(
     SseDeserializer deserializer,
   );
@@ -692,6 +707,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<TransactionOutput> sse_decode_list_transaction_output(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LocalProofResult sse_decode_local_proof_result(SseDeserializer deserializer);
 
   @protected
@@ -717,6 +737,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
   ProverTeeNetwork? sse_decode_opt_box_autoadd_prover_tee_network(
@@ -799,6 +822,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TransactionLookupStatus sse_decode_transaction_lookup_status(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TransactionOutput sse_decode_transaction_output(SseDeserializer deserializer);
 
   @protected
   TransportFailure sse_decode_transport_failure(SseDeserializer deserializer);
@@ -1036,6 +1062,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_prover_tee_network(
     ProverTeeNetwork self,
     SseSerializer serializer,
@@ -1178,6 +1210,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_transaction_output(
+    List<TransactionOutput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_local_proof_result(
     LocalProofResult self,
     SseSerializer serializer,
@@ -1208,6 +1246,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_prover_tee_network(
@@ -1311,6 +1355,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_transaction_lookup_status(
     TransactionLookupStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transaction_output(
+    TransactionOutput self,
     SseSerializer serializer,
   );
 

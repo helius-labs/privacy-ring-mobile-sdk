@@ -79,6 +79,7 @@ use crate::{
 };
 
 mod cache;
+mod history;
 mod lookup;
 pub use cache::{CacheTarget, CachedOutput};
 
@@ -567,6 +568,8 @@ pub struct MobileWallet {
     reuse_notes: Duration,
     /// The last read, for the spends within `reuse_notes` of it.
     recent: Mutex<Option<RecentRead>>,
+    /// Successful confirmed block timestamps, shared by activity and lookup.
+    block_times: Mutex<HashMap<u64, i64>>,
     /// Where spends are proved unless a call says otherwise.
     proving: Proving,
     /// How a send whose response was lost is looked up: [`SEND_LOOKUP`].
@@ -694,6 +697,7 @@ impl MobileWallet {
             max_spend_inputs,
             reuse_notes: Duration::from_millis(config.reuse_notes_ms.unwrap_or(0)),
             recent: Mutex::new(None),
+            block_times: Mutex::default(),
             proving: config.proving.unwrap_or(Proving::Local),
             send_lookup: SEND_LOOKUP,
             priority_fee: config.priority_fee_lamports,
@@ -997,7 +1001,7 @@ impl MobileWallet {
         let scan = self.scan()?;
         Ok(WalletOverview {
             balances: self.token_balances(&scan.spendable)?,
-            activity: activity::entries(&scan.history, &scan.asset_registry)?,
+            activity: history::entries(self, &scan)?,
             unresolved_assets: UnresolvedAssets {
                 asset_ids: scan.history.unknown_asset_ids.iter().copied().collect(),
                 mints: scan
@@ -1044,10 +1048,13 @@ impl MobileWallet {
     ///
     /// The indexer does not say which spends were withdrawals: a spend whose
     /// outputs are all this wallet's own is listed as a withdrawal, one with
-    /// another wallet's output as sent.
+    /// another wallet's output as sent. Non-own private recipient tags are
+    /// included without extra registry or transaction reads. Block times are
+    /// filled from the RPC once per uncached slot, with bounded concurrency;
+    /// an unavailable timestamp stays `None` without failing the history read.
     pub fn activity(&mut self) -> Result<Vec<ActivityEntry>, WalletError> {
         let scan = self.scan()?;
-        activity::entries(&scan.history, &scan.asset_registry)
+        history::entries(self, &scan)
     }
 
     /// Fetch only the shielded events of `signature` and their confirmed
@@ -1057,6 +1064,9 @@ impl MobileWallet {
     ///
     /// A cold wallet can read its default-ring outgoing transfers and public
     /// withdrawals using its transaction viewing key, without old input notes.
+    /// `outputs` keeps each private payment and public withdrawal separate,
+    /// excluding own change and padding. Block time and network fee come from
+    /// the same confirmed RPC read, including when indexing is still pending.
     /// `Incomplete` reports unsupported spends or missing metadata rather than
     /// returning an incorrect empty result. Recipient-tagged dummy padding
     /// (possible on an exact-balance private send) is also incomplete: a cold
@@ -1546,6 +1556,12 @@ impl MobileWallet {
 
     fn recent(&self) -> std::sync::MutexGuard<'_, Option<RecentRead>> {
         self.recent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn block_times(&self) -> std::sync::MutexGuard<'_, HashMap<u64, i64>> {
+        self.block_times
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

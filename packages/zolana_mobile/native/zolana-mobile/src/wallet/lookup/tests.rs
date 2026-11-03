@@ -89,6 +89,22 @@ impl Fixture {
         assets: &[Mint],
         cached: bool,
     ) -> Self {
+        Self::spend_to_outputs(
+            sender,
+            &[(recipient, private)],
+            &[(recipient, withdrawal)],
+            assets,
+            cached,
+        )
+    }
+
+    fn spend_to_outputs(
+        sender: &MobileWallet,
+        private: &[(&MobileWallet, u64)],
+        withdrawals: &[(&MobileWallet, u64)],
+        assets: &[Mint],
+        cached: bool,
+    ) -> Self {
         let payer = sender.owner;
         let mut registry = AssetRegistry::default();
         for mint in assets {
@@ -129,23 +145,23 @@ impl Fixture {
         let mut transaction = ConfidentialTransaction::new(notes.clone(), payer).unwrap();
         let mut settlements = Vec::new();
         for asset in assets {
-            if private > 0 {
+            for &(recipient, amount) in private.iter().filter(|(_, amount)| *amount > 0) {
                 if asset.asset == SOL_MINT {
                     transaction
-                        .transfer_sol(&recipient.address, private)
+                        .transfer_sol(&recipient.address, amount)
                         .unwrap();
                 } else {
                     transaction
-                        .transfer(&recipient.address, asset.asset, private)
+                        .transfer(&recipient.address, asset.asset, amount)
                         .unwrap();
                 }
             }
-            if withdrawal > 0 {
+            for &(recipient, amount) in withdrawals.iter().filter(|(_, amount)| *amount > 0) {
                 settlements.push(
                     transaction
                         .withdraw_to(
                             asset.asset,
-                            withdrawal,
+                            amount,
                             recipient.owner,
                             (asset.asset != SOL_MINT).then(pda::spl_token_program_id),
                         )
@@ -276,20 +292,48 @@ impl Fixture {
             ring_config: None,
             ring_program_id: None,
         };
-        let record = zolana_user_registry_interface::UserRecord {
-            owner: recipient.owner,
-            bump: 0,
-            nullifier_pubkey: recipient.address.nullifier_pubkey,
-            viewing_pubkey: *recipient.address.viewing_pubkey.as_bytes(),
-            merge_encryption: MergeEncryptionScheme::Disabled,
-        };
+        let records = private
+            .iter()
+            .map(|(recipient, _)| {
+                let record = zolana_user_registry_interface::UserRecord {
+                    owner: recipient.owner,
+                    bump: 0,
+                    nullifier_pubkey: recipient.address.nullifier_pubkey,
+                    viewing_pubkey: *recipient.address.viewing_pubkey.as_bytes(),
+                    merge_encryption: MergeEncryptionScheme::Disabled,
+                };
+                (recipient.owner, record)
+            })
+            .collect();
         Self {
             signature,
             chain,
             events: vec![event],
             registry,
             notes,
-            records: HashMap::from([(recipient.owner, record)]),
+            records,
+        }
+    }
+
+    fn scan(&self, owner: &MobileWallet) -> UtxoScanResult {
+        let decoded = decrypt(&owner.keys, &self.events, &self.registry).unwrap();
+        let mut utxos = self.notes.clone();
+        utxos.extend(verify_owned(&owner.keys, &decoded).unwrap().utxos);
+        UtxoScanResult {
+            asset_registry: self.registry.clone(),
+            spendable: Default::default(),
+            history: History {
+                transactions: self.events.clone(),
+                utxos,
+                view_tags: [owner
+                    .address
+                    .signing_pubkey
+                    .confidential_view_tag()
+                    .unwrap()]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            },
         }
     }
 
@@ -372,25 +416,11 @@ fn cold_lookup_matches_history_for_sends_withdrawals_and_multiple_assets() {
                 &assets,
                 cached,
             );
-            let decoded = decrypt(&owner.keys, &fixture.events, &fixture.registry).unwrap();
-            let mut utxos = fixture.notes.clone();
-            utxos.extend(verify_owned(&owner.keys, &decoded).unwrap().utxos);
-            let expected = activity::entries(
-                &History {
-                    transactions: fixture.events.clone(),
-                    utxos,
-                    view_tags: [owner
-                        .address
-                        .signing_pubkey
-                        .confidential_view_tag()
-                        .unwrap()]
-                    .into_iter()
-                    .collect(),
-                    ..Default::default()
-                },
-                &fixture.registry,
-            )
-            .unwrap();
+            let scan = fixture.scan(&owner);
+            let mut expected = activity::entries(&scan.history, &scan.asset_registry).unwrap();
+            for entry in &mut expected {
+                entry.block_time = Some(0);
+            }
             let confirmed: Confirmed = serde_json::from_value(fixture.chain.clone()).unwrap();
             let groups = ConfirmedInstructionGroups::try_from(confirmed)
                 .expect("fixture instruction groups");
@@ -410,6 +440,39 @@ fn cold_lookup_matches_history_for_sends_withdrawals_and_multiple_assets() {
             assert_eq!(result.entries, expected);
             assert!(!result.entries.is_empty());
             assert_eq!(result.indexed_slot, 10);
+            assert_eq!(result.block_time, Some(0));
+            assert_eq!(result.fee, Some(5000));
+            let expected_outputs = assets
+                .iter()
+                .flat_map(|asset| {
+                    let private = (private > 0).then(|| TransactionOutput {
+                        recipient: recipient_wallet.owner.to_string(),
+                        mint: mint_name(&asset.asset),
+                        amount: private,
+                        is_public: false,
+                    });
+                    let public = (withdrawal > 0).then(|| TransactionOutput {
+                        recipient: if asset.asset == SOL_MINT {
+                            recipient_wallet.owner
+                        } else {
+                            pda::associated_token_address_with_program(
+                                &recipient_wallet.owner,
+                                &asset.asset,
+                                &pda::spl_token_program_id(),
+                            )
+                        }
+                        .to_string(),
+                        mint: mint_name(&asset.asset),
+                        amount: withdrawal,
+                        is_public: true,
+                    });
+                    private.into_iter().chain(public)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(result.outputs.len(), expected_outputs.len());
+            for output in expected_outputs {
+                assert!(result.outputs.contains(&output), "missing {output:?}");
+            }
             assert!(asked.lock().unwrap().iter().all(|method| [
                 "getTransaction",
                 "getShieldedTransactionsBySignature",
@@ -418,6 +481,205 @@ fn cold_lookup_matches_history_for_sends_withdrawals_and_multiple_assets() {
             .contains(&method.as_str())));
         }
     }
+}
+
+#[test]
+fn payments_variable_collector_fees_and_withdrawals_keep_each_output() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let collector = identity(&Keypair::new());
+    // A withdrawal with a private fee has only the collector's private
+    // output. A mixed payment has two distinct outputs to the same recipient.
+    for fee in [1, 7] {
+        for send in [false, true] {
+            let mut private = vec![(&collector, fee)];
+            if send {
+                private.extend([(&recipient, 20), (&recipient, 3)]);
+            }
+            let fixture = Fixture::spend_to_outputs(
+                &owner,
+                &private,
+                &[(&recipient, 30), (&owner, 5)],
+                &[Mint::SOL],
+                false,
+            );
+            let signature = fixture.signature.to_string();
+            let mut expected = private
+                .iter()
+                .map(|(wallet, amount)| TransactionOutput {
+                    recipient: wallet.owner.to_string(),
+                    mint: None,
+                    amount: *amount,
+                    is_public: false,
+                })
+                .collect::<Vec<_>>();
+            expected.extend([
+                TransactionOutput {
+                    recipient: recipient.owner.to_string(),
+                    mint: None,
+                    amount: 30,
+                    is_public: true,
+                },
+                TransactionOutput {
+                    recipient: owner.owner.to_string(),
+                    mint: None,
+                    amount: 5,
+                    is_public: true,
+                },
+            ]);
+            let (wallet, _) = fixture.open(&signer);
+            let result = wallet.transaction(signature).unwrap();
+            assert_eq!(result.status, Status::Ready);
+            assert_eq!(result.outputs, expected);
+            assert_eq!(result.entries.len(), 1);
+            assert_eq!(
+                result.entries[0].amount,
+                fee + 35 + if send { 23 } else { 0 }
+            );
+            assert_eq!(
+                result.fee,
+                Some(5000),
+                "network fee is separate from collector fee"
+            );
+        }
+    }
+}
+
+#[test]
+fn activity_times_are_cached_per_slot_and_lookup_seeds_the_same_cache() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let fixture = Fixture::spend(
+        &owner,
+        &recipient,
+        20,
+        0,
+        &[Mint::SOL, Mint::new(Pubkey::new_unique(), 7)],
+    );
+    let scan = fixture.scan(&owner);
+    let (reader, asked) = wallet(&signer, |method, params| {
+        assert_eq!(method, "getBlockTime");
+        assert_eq!(params, &json!([10]));
+        json!({"result": 1_800_000_000})
+    });
+    for _ in 0..2 {
+        let entries = super::super::history::entries(&reader, &scan).unwrap();
+        assert_eq!(entries.len(), 2);
+        for entry in entries {
+            assert_eq!(entry.block_time, Some(1_800_000_000));
+            assert_eq!(entry.recipients, vec![recipient.owner.to_string()]);
+        }
+    }
+    assert_eq!(*asked.lock().unwrap(), vec!["getBlockTime"]);
+
+    let signature = fixture.signature.to_string();
+    let (reader, asked) = fixture.open(&signer);
+    let result = reader.transaction(signature).unwrap();
+    assert_eq!(result.status, Status::Ready);
+    let entries = super::super::history::entries(&reader, &scan).unwrap();
+    assert_eq!(entries, result.entries);
+    assert!(!asked
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|method| method == "getBlockTime"));
+}
+
+#[test]
+fn activity_timestamps_follow_slots_rather_than_transaction_order() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let fixture = Fixture::spend(&owner, &recipient, 20, 0, &[Mint::SOL]);
+    let mut scan = fixture.scan(&owner);
+    let first = scan.history.transactions[0].clone();
+    scan.history.transactions = [12, 10, 12, 11]
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            let mut tx = first.clone();
+            tx.slot = slot;
+            tx.tx_signature = Signature::from([i as u8; 64]);
+            tx
+        })
+        .collect();
+    let (reader, asked) = wallet(&signer, |method, params| {
+        assert_eq!(method, "getBlockTime");
+        json!({"result": 1_800_000_000 + params[0].as_i64().unwrap()})
+    });
+    let entries = super::super::history::entries(&reader, &scan).unwrap();
+    assert_eq!(entries.len(), 4);
+    for entry in entries {
+        assert_eq!(entry.block_time, Some(1_800_000_000 + entry.slot as i64));
+    }
+    assert_eq!(
+        asked.lock().unwrap().len(),
+        3,
+        "one request per distinct slot"
+    );
+}
+
+#[test]
+fn unavailable_activity_times_preserve_rows_and_are_retried() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let fixture = Fixture::spend(&owner, &recipient, 20, 0, &[Mint::SOL]);
+    let scan = fixture.scan(&owner);
+    for first in [
+        json!({"result": null}),
+        json!({"error": {"code": -32009, "message": "slot unavailable"}}),
+    ] {
+        let calls = AtomicUsize::new(0);
+        let (reader, asked) = wallet(&signer, move |method, _| {
+            assert_eq!(method, "getBlockTime");
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                first.clone()
+            } else {
+                json!({"result": 1_800_000_000})
+            }
+        });
+        let entries = super::super::history::entries(&reader, &scan).unwrap();
+        assert_eq!(entries[0].block_time, None);
+        assert_eq!(entries[0].amount, 20);
+        assert_eq!(entries[0].recipients, vec![recipient.owner.to_string()]);
+        let entries = super::super::history::entries(&reader, &scan).unwrap();
+        assert_eq!(entries[0].block_time, Some(1_800_000_000));
+        assert_eq!(asked.lock().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn activity_recipient_tags_exclude_own_notes_and_deduplicate_across_events() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let collector = identity(&Keypair::new());
+    let mut fixture = Fixture::spend_to_outputs(
+        &owner,
+        &[(&recipient, 20), (&collector, 5), (&recipient, 3)],
+        &[],
+        &[Mint::SOL],
+        false,
+    );
+    fixture.events.push(fixture.events[0].clone());
+    let scan = fixture.scan(&owner);
+    let entries = activity::entries(&scan.history, &scan.asset_registry).unwrap();
+    let mut expected = vec![recipient.owner.to_string(), collector.owner.to_string()];
+    expected.sort();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].recipients, expected);
+    assert_eq!(entries[0].amount, 28);
+    // Do not present a ring's opaque discovery tags as Solana recipients.
+    let mut history = scan.history;
+    for tx in &mut history.transactions {
+        tx.ring_config = Some(Pubkey::new_unique());
+    }
+    let entries = activity::entries(&history, &scan.asset_registry).unwrap();
+    assert!(entries[0].recipients.is_empty());
 }
 
 #[test]
@@ -432,6 +694,8 @@ fn incoming_unrelated_and_self_transfers_are_read_without_history() {
     let incoming = wallet.transaction(signature).unwrap();
     assert_eq!(incoming.status, Status::Ready);
     assert_eq!(incoming.entries.len(), 1);
+    assert!(incoming.outputs.is_empty());
+    assert!(incoming.entries[0].recipients.is_empty());
     assert_eq!(
         (incoming.entries[0].kind, incoming.entries[0].amount),
         (ActivityKind::Received, 20)
@@ -443,12 +707,15 @@ fn incoming_unrelated_and_self_transfers_are_read_without_history() {
     let unrelated = wallet.transaction(signature).unwrap();
     assert_eq!(unrelated.status, Status::Ready);
     assert!(unrelated.entries.is_empty());
+    assert!(unrelated.outputs.is_empty());
 
     let fixture = Fixture::spend(&owner, &owner, 20, 0, &[Mint::SOL]);
     let signature = fixture.signature.to_string();
     let (wallet, _) = fixture.open(&sender);
     let own = wallet.transaction(signature).unwrap();
     assert_eq!(own.status, Status::Ready);
+    assert!(own.outputs.is_empty());
+    assert!(own.entries[0].recipients.is_empty());
     assert_eq!(
         (own.entries[0].kind, own.entries[0].amount),
         (ActivityKind::SelfTransfer, 100)
@@ -478,7 +745,10 @@ fn indexing_delay_not_found_and_indexed_empty_are_distinct() {
             .unwrap();
         assert_eq!(result.status, expected);
         assert_eq!(result.slot, chain_slot);
+        assert_eq!(result.block_time, chain_slot.map(|_| 0));
+        assert_eq!(result.fee, chain_slot.map(|_| 5000));
         assert!(result.entries.is_empty());
+        assert!(result.outputs.is_empty());
         assert_eq!(asked.lock().unwrap().len(), 2);
     }
 }
@@ -519,6 +789,8 @@ fn missing_metadata_and_corrupt_ciphertexts_never_return_partial_rows() {
         let result = wallet.transaction(signature).unwrap();
         assert_eq!(result.status, Status::Incomplete, "mutation {mutation}");
         assert!(result.entries.is_empty());
+        assert!(result.outputs.is_empty());
+        assert_eq!(result.fee, if mutation == 0 { None } else { Some(5000) });
     }
     // A recipient can still authenticate its received notes when the chain
     // RPC has pruned the metadata required for sender-side settlements.
@@ -529,6 +801,59 @@ fn missing_metadata_and_corrupt_ciphertexts_never_return_partial_rows() {
     let result = wallet.transaction(signature).unwrap();
     assert_eq!(result.status, Status::Ready);
     assert_eq!(result.entries[0].amount, 20);
+}
+
+#[test]
+fn missing_times_and_fees_are_optional_and_zero_fees_are_preserved() {
+    let sender = Keypair::new();
+    let receiver = Keypair::new();
+    let owner = identity(&sender);
+    let other = identity(&receiver);
+    for fee in [None, Some(0)] {
+        let mut fixture = Fixture::spend(&owner, &other, 20, 0, &[Mint::SOL]);
+        fixture.chain["blockTime"] = Value::Null;
+        if let Some(fee) = fee {
+            fixture.chain["meta"]["fee"] = json!(fee);
+        } else {
+            fixture.chain["meta"] = Value::Null;
+        }
+        let signature = fixture.signature.to_string();
+        let (reader, _) = fixture.open(&receiver);
+        let result = reader.transaction(signature).unwrap();
+        assert_eq!(result.status, Status::Ready);
+        assert_eq!(result.block_time, None);
+        assert_eq!(result.fee, fee);
+        assert_eq!(result.entries[0].block_time, None);
+        assert_eq!(result.entries[0].amount, 20);
+    }
+}
+
+#[test]
+fn an_invalid_later_output_discards_all_payment_details() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let collector = identity(&Keypair::new());
+    let mut fixture = Fixture::spend_to_outputs(
+        &owner,
+        &[(&recipient, 20), (&collector, 5)],
+        &[(&recipient, 10)],
+        &[Mint::SOL],
+        false,
+    );
+    fixture
+        .records
+        .get_mut(&collector.owner)
+        .unwrap()
+        .nullifier_pubkey[0] ^= 1;
+    let signature = fixture.signature.to_string();
+    let (reader, _) = fixture.open(&signer);
+    let result = reader.transaction(signature).unwrap();
+    assert_eq!(result.status, Status::Incomplete);
+    assert!(result.entries.is_empty());
+    assert!(result.outputs.is_empty());
+    assert_eq!(result.fee, Some(5000));
+    assert_eq!(result.block_time, Some(0));
 }
 
 #[test]
