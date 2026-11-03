@@ -23,8 +23,10 @@ type Confirmed = EncodedConfirmedTransactionWithStatusMeta;
 pub(super) fn transaction(
     wallet: &MobileWallet,
     signature: String,
+    prepared: Option<&PreparedTransaction>,
 ) -> Result<TransactionLookup, WalletError> {
     let signature = Signature::from_str(&signature).map_err(|_| WalletError::SignatureInvalid)?;
+    let padding = padding_commitments(prepared.map_or(&[], |pending| pending.outputs.as_slice()))?;
     // A single confirmed RPC read, including a real `null` when unavailable.
     // The convenience transaction fetcher polls missing signatures for 30s.
     let (indexed, confirmed) = beside(
@@ -114,6 +116,7 @@ pub(super) fn transaction(
         &registry,
         discover,
         confirmed.as_ref(),
+        &padding,
     )?;
     if matches!(details, Details::NeedAssets) && discover {
         for mint in fetch_spl_asset_registrations(&wallet.client, slot)? {
@@ -127,6 +130,7 @@ pub(super) fn transaction(
             &registry,
             false,
             confirmed.as_ref(),
+            &padding,
         )?;
     }
     match details {
@@ -136,6 +140,33 @@ pub(super) fn transaction(
         }
         Details::Incomplete | Details::NeedAssets => Ok(result(Status::Incomplete, vec![], vec![])),
     }
+}
+
+/// The commitments of the dummy outputs among a prepared spend's openings,
+/// with their trees. Each is recomputed from its blinding, so an opening that
+/// does not hash to a published commitment matches nothing.
+fn padding_commitments(outputs: &[OutputOpening]) -> Result<HashSet<(u16, [u8; 32])>, WalletError> {
+    outputs
+        .iter()
+        .filter(|output| {
+            output.owner_signing_key.is_none()
+                && output.nullifier_key.is_none()
+                && output.amount == 0
+                && !output.compact
+        })
+        .map(|output| {
+            let blinding = output
+                .blinding
+                .as_slice()
+                .try_into()
+                .map_err(|_| cache::invalid("invalid output blinding"))?;
+            let dummy = SppProofOutputUtxo {
+                blinding,
+                ..Default::default()
+            };
+            Ok((output.tree_id, dummy.hash(output.tree_id)?))
+        })
+        .collect()
 }
 
 enum Details {
@@ -158,6 +189,7 @@ impl MobileWallet {
         assets: &AssetRegistry,
         discover: bool,
         confirmed: Option<&Confirmed>,
+        padding: &HashSet<(u16, [u8; 32])>,
     ) -> Result<Details, WalletError> {
         let decoded = decrypt(&self.keys, transactions, assets)?;
         if discover && (!decoded.unknown_asset_ids.is_empty() || !decoded.unknown_mints.is_empty())
@@ -310,7 +342,9 @@ impl MobileWallet {
                 return Ok(Details::Incomplete);
             };
             for (index, slot) in tx.output_slots.iter().enumerate() {
-                if slot.view_tag == own_tag {
+                if slot.view_tag == own_tag
+                    || padding.contains(&(slot.output_context.tree_id, slot.output_context.hash))
+                {
                     continue;
                 }
                 let Some(OutputDataEncoding::Encrypted(blob)) = slot.output_data() else {

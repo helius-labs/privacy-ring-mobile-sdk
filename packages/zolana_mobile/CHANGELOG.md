@@ -2,6 +2,11 @@
 
 Unreleased.
 
+* Add `transaction(signature, prepared: payment)` to authenticate dummy padding
+  from saved output openings. Exact-balance payment details can be read after
+  restoring the prepared transaction without scanning wallet history. Signature-only
+  lookup still returns `incomplete` when padding cannot be authenticated.
+
 * Add `spendableNotes()` with stable commitment IDs, mint, amount, tree ID and
   merge eligibility, excluding zero-value and reserved notes.
 * Add exact ordered `inputIds` to `prepareMerge(cacheTarget: ...)`. Infer the

@@ -253,6 +253,7 @@ class FakeWallet implements MobileWallet {
   Future<List<ActivityEntry>> activity() async => const [];
 
   final lookups = <String>[];
+  final lookupPrepared = <PreparedTransaction>[];
   TransactionLookup lookup = TransactionLookup(
     status: TransactionLookupStatus.ready,
     entries: const [],
@@ -265,6 +266,15 @@ class FakeWallet implements MobileWallet {
     lookups.add(signature);
     if (lookupError case final error?) throw error;
     return lookup;
+  }
+
+  @override
+  Future<TransactionLookup> transactionWithPrepared({
+    required String signature,
+    required PreparedTransaction pending,
+  }) async {
+    lookupPrepared.add(pending);
+    return transaction(signature: signature);
   }
 
   final registrationMerging = <bool?>[];
@@ -647,6 +657,13 @@ void main() {
         native.lookups,
         List.filled(TransactionLookupStatus.values.length, 'signature'),
       );
+      expect(native.lookupPrepared, isEmpty);
+      final prepared = FakePending(Uint8List.fromList([1, 2, 3]));
+      expect(
+        await wallet.transaction('signature', prepared: prepared),
+        same(native.lookup),
+      );
+      expect(native.lookupPrepared, [same(prepared)]);
       native.lookupError = const WalletError.client(message: 'unavailable');
       await expectLater(
         wallet.transaction('signature'),
