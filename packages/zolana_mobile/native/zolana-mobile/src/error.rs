@@ -155,6 +155,11 @@ pub enum WalletError {
 impl From<ClientError> for WalletError {
     fn from(failure: ClientError) -> Self {
         match failure {
+            ClientError::ProvingKeySet(
+                "incompatible" | "unsupported_circuit" | "indexed_proving_unsupported",
+            ) => Self::UnsupportedCircuit,
+            ClientError::ProvingKeySet("attestation_required") => Self::ProverPolicyMissing,
+            ClientError::ProvingKeySet(_) => Self::ProvingKeyCatalogInvalid,
             ClientError::ProverFailed(source) if source.is::<DeviceProverFailure>() => source
                 .downcast::<DeviceProverFailure>()
                 .map_or(Self::ProofFailed, |failure| failure.0),

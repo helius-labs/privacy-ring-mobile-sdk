@@ -394,6 +394,7 @@ pub(crate) mod tests {
             proving_key_dir: std::env::temp_dir().display().to_string(),
             proving_key_url: None,
             proving_key_catalog: None,
+            proving_keys_from_prover: None,
             proving: None,
             prover_url: None,
             require_prover_tee: None,

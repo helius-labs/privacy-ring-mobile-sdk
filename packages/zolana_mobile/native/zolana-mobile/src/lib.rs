@@ -55,10 +55,11 @@ struct ProverState {
 
 struct Loaded {
     id: u64,
-    /// The lockfile key [`prover::NativeProver`] loaded, or `None` for a key
+    /// The key path [`prover::NativeProver`] loaded, including its generation,
+    /// or `None` for a key
     /// the application loaded itself as a [`LocalProver`]. The native prover
     /// switches keys only in the first case.
-    key: Option<String>,
+    key: Option<std::path::PathBuf>,
     prover: zopro_zolana::Prover,
 }
 

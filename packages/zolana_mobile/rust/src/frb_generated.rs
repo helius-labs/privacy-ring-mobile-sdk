@@ -2984,6 +2984,7 @@ const _: fn() = || {
         let _: String = WalletConfig.proving_key_dir;
         let _: Option<String> = WalletConfig.proving_key_url;
         let _: Option<String> = WalletConfig.proving_key_catalog;
+        let _: Option<bool> = WalletConfig.proving_keys_from_prover;
         let _: Option<zolana_mobile::Proving> = WalletConfig.proving;
         let _: Option<String> = WalletConfig.prover_url;
         let _: Option<bool> = WalletConfig.require_prover_tee;
@@ -4279,6 +4280,7 @@ impl SseDecode for zolana_mobile::WalletConfig {
         let mut var_provingKeyDir = <String>::sse_decode(deserializer);
         let mut var_provingKeyUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_provingKeyCatalog = <Option<String>>::sse_decode(deserializer);
+        let mut var_provingKeysFromProver = <Option<bool>>::sse_decode(deserializer);
         let mut var_proving = <Option<zolana_mobile::Proving>>::sse_decode(deserializer);
         let mut var_proverUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_requireProverTee = <Option<bool>>::sse_decode(deserializer);
@@ -4296,6 +4298,7 @@ impl SseDecode for zolana_mobile::WalletConfig {
             proving_key_dir: var_provingKeyDir,
             proving_key_url: var_provingKeyUrl,
             proving_key_catalog: var_provingKeyCatalog,
+            proving_keys_from_prover: var_provingKeysFromProver,
             proving: var_proving,
             prover_url: var_proverUrl,
             require_prover_tee: var_requireProverTee,
@@ -5479,6 +5482,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::WalletConfig> {
             self.0.proving_key_dir.into_into_dart().into_dart(),
             self.0.proving_key_url.into_into_dart().into_dart(),
             self.0.proving_key_catalog.into_into_dart().into_dart(),
+            self.0.proving_keys_from_prover.into_into_dart().into_dart(),
             self.0.proving.into_into_dart().into_dart(),
             self.0.prover_url.into_into_dart().into_dart(),
             self.0.require_prover_tee.into_into_dart().into_dart(),
@@ -6589,6 +6593,7 @@ impl SseEncode for zolana_mobile::WalletConfig {
         <String>::sse_encode(self.proving_key_dir, serializer);
         <Option<String>>::sse_encode(self.proving_key_url, serializer);
         <Option<String>>::sse_encode(self.proving_key_catalog, serializer);
+        <Option<bool>>::sse_encode(self.proving_keys_from_prover, serializer);
         <Option<zolana_mobile::Proving>>::sse_encode(self.proving, serializer);
         <Option<String>>::sse_encode(self.prover_url, serializer);
         <Option<bool>>::sse_encode(self.require_prover_tee, serializer);

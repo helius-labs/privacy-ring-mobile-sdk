@@ -10,7 +10,7 @@ device. The Solana key stays with the application's signer.
 Targets the finalized ceremony keys and signed-policy protocol in
 [Zolana #521](https://github.com/helius-labs/zolana/pull/521).
 
-Pins Zolana commit `c4062d3860965855e47268f61b01a27e774096eb` and shielded-pool program
+Pins Zolana commit `d3024ce0fa879300ceaa716000c11736ccc798ff` and shielded-pool program
 `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply indexer and
 remote prover URLs with a reviewed TEE policy.
 Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
