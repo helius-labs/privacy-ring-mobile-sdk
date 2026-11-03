@@ -23,6 +23,7 @@ fn config() -> WalletConfig {
         prover_url: None,
         require_prover_tee: None,
         prover_tee_policy: None,
+        prover_tee_network: None,
         prover_sync_only: None,
         max_spend_inputs: None,
         reuse_notes_ms: None,

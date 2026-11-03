@@ -76,7 +76,8 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
         proverUrl: backend.proverUrl,
         requireProverTee: true,
         proverSyncOnly: _syncOnly,
-        proverTeePolicy: await demoProverPolicy(),
+        proverTeePolicy: demoProverPolicy,
+        proverTeeNetwork: demoProverNetwork,
         proving: Proving.local,
       ),
     );

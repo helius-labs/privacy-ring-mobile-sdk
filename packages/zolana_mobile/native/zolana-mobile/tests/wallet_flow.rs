@@ -108,6 +108,13 @@ fn config() -> WalletConfig {
         prover_tee_policy: env::var("ZOLANA_E2E_TEE_POLICY")
             .ok()
             .map(|path| std::fs::read_to_string(path).expect("TEE policy file")),
+        prover_tee_network: env::var("ZOLANA_E2E_TEE_NETWORK").ok().map(|network| {
+            match network.as_str() {
+                "mainnet" => zolana_mobile::ProverTeeNetwork::Mainnet,
+                "devnet" => zolana_mobile::ProverTeeNetwork::Devnet,
+                _ => panic!("ZOLANA_E2E_TEE_NETWORK must be mainnet or devnet"),
+            }
+        }),
         prover_sync_only: env::var("ZOLANA_E2E_SYNC_ONLY").ok().map(|v| v == "true"),
         max_spend_inputs: None,
         reuse_notes_ms: None,
@@ -547,6 +554,7 @@ fn register_deposit_transfer_and_receive() {
     let replaying = WalletConfig {
         prover_url: Some(REPLAYING_PROVER.to_string()),
         prover_tee_policy: None,
+        prover_tee_network: None,
         require_prover_tee: None,
         ..config()
     };

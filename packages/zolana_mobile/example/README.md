@@ -40,9 +40,10 @@ handling, not wallet authentication. No private witness is written to disk.
 
 ## Remote prover policy
 
-The app and its live tests explicitly load `assets/policies/devnet.json` through
-`lib/prover_policy.dart`. The Network menu changes URLs while retaining this
-policy, including for a localhost proxy. Supply `--dart-define=ZOLANA_TEE_POLICY=...`
-with reviewed JSON contents to choose another policy. This configuration includes
-both Nitro measurements and the HPKE public-key pin; it is independent of SDK
-releases. Local SDK clients can omit the remote prover URL and policy entirely.
+The app and its live tests select `ProverTeeNetwork.devnet` through
+`lib/prover_policy.dart`. The SDK verifies and refreshes the signed policy using
+its pinned signing keys. Changing URLs, including a localhost proxy, retains
+this network selection. Supply `--dart-define=ZOLANA_TEE_POLICY=...` with complete
+reviewed static policy JSON for a custom deployment; this disables the signed
+policy selection, and the app must keep that override current. Local proving
+can omit the remote prover URL and policy entirely.

@@ -1076,7 +1076,7 @@ mod tests {
 
     #[test]
     fn status_excludes_the_upstream_eddsa_circuits_without_local_keys() {
-        let store = KeyStore::new(scratch("status"), None, unreachable());
+        let store = KeyStore::new(scratch("status-catalog"), None, unreachable());
         let status = store.status();
         assert_eq!(status.len(), artifacts().keys.len());
         assert!(status

@@ -390,9 +390,9 @@ async fn proxy(
     app.authorize(&headers)?;
     let route = uri
         .path()
-        .strip_prefix("/v1/zolana")
+        .strip_prefix("/v1/spr")
         .ok_or_else(|| bad("invalid proxy route"))?;
-    let attestation = method == Method::GET && route == "/tee/v1/attestation";
+    let attestation = method == Method::GET && route == "/attestation";
     let merge_route = |path: &str| {
         matches!(
             path,
@@ -409,7 +409,7 @@ async fn proxy(
     }
     let header_true = |name| headers.get(name).and_then(|v| v.to_str().ok()) == Some("true");
     if merge || status {
-        if !headers.contains_key("zolana-tee") || !headers.contains_key("zolana-tee-enc") {
+        if !headers.contains_key("spr-tee") || !headers.contains_key("spr-tee-enc") {
             return Err(bad("encrypted TEE request required"));
         }
         if merge
@@ -430,7 +430,7 @@ async fn proxy(
             if query.len() != 1
                 || query[0].0 != "jobId"
                 || query[0].1.is_empty()
-                || !headers.contains_key("zolana-tee-ciphertext")
+                || !headers.contains_key("spr-tee-ciphertext")
                 || !body.is_empty()
                 || headers.contains_key("x-sync")
                 || headers.contains_key("x-async")
@@ -458,9 +458,9 @@ async fn proxy(
         "content-type",
         "x-sync",
         "x-async",
-        "zolana-tee",
-        "zolana-tee-enc",
-        "zolana-tee-ciphertext",
+        "spr-tee",
+        "spr-tee-enc",
+        "spr-tee-ciphertext",
     ] {
         if let Some(value) = headers.get(name) {
             request = request.header(name, value);
@@ -484,9 +484,9 @@ async fn proxy(
     let mut response = (status, bytes).into_response();
     for name in [
         "content-type",
-        "zolana-tee",
-        "zolana-tee-enc",
-        "zolana-tee-ciphertext",
+        "spr-tee",
+        "spr-tee-enc",
+        "spr-tee-ciphertext",
         "retry-after",
     ] {
         if let Some(value) = response_headers.get(name) {
@@ -534,7 +534,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .route("/runs/{id}", get(status))
         .route("/runs/{id}/merges", post(relay))
         .route("/runs/{id}/close", post(close))
-        .route("/v1/zolana/{*path}", get(proxy).post(proxy))
+        .route("/v1/spr/{*path}", get(proxy).post(proxy))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(app);
     let address = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "127.0.0.1:8788".into());
@@ -676,8 +676,8 @@ mod http_tests {
                             .open(
                                 "GET",
                                 &uri.to_string(),
-                                &hex::decode(headers["zolana-tee-enc"].to_str().unwrap()).unwrap(),
-                                &hex::decode(headers["zolana-tee-ciphertext"].to_str().unwrap())
+                                &hex::decode(headers["spr-tee-enc"].to_str().unwrap()).unwrap(),
+                                &hex::decode(headers["spr-tee-ciphertext"].to_str().unwrap())
                                     .unwrap(),
                             )
                             .unwrap();
@@ -688,7 +688,7 @@ mod http_tests {
                             _ => json!({"status":"failed","error":"test failure"}),
                         };
                         (
-                            [("zolana-tee", "v1")],
+                            [("spr-tee", "v1")],
                             seal_response(
                                 &opened.response_key,
                                 200,
@@ -710,14 +710,14 @@ mod http_tests {
                         .open(
                             "POST",
                             &uri.to_string(),
-                            &hex::decode(headers["zolana-tee-enc"].to_str().unwrap()).unwrap(),
+                            &hex::decode(headers["spr-tee-enc"].to_str().unwrap()).unwrap(),
                             &body,
                         )
                         .unwrap();
                     assert_eq!(opened.plaintext, b"private witness");
                     (
                         StatusCode::ACCEPTED,
-                        [("zolana-tee", "v1")],
+                        [("spr-tee", "v1")],
                         seal_response(
                             &opened.response_key,
                             202,
@@ -772,8 +772,8 @@ mod http_tests {
             let mut headers = HeaderMap::new();
             for (name, value) in [
                 ("x-sf-auth", "token"),
-                ("zolana-tee", "v1"),
-                ("zolana-tee-enc", &encrypted.enc),
+                ("spr-tee", "v1"),
+                ("spr-tee-enc", &encrypted.enc),
             ] {
                 headers.insert(name, value.parse().unwrap());
             }
@@ -783,12 +783,12 @@ mod http_tests {
                 Bytes::from(encrypted.body.clone())
             } else {
                 headers.insert(
-                    "zolana-tee-ciphertext",
+                    "spr-tee-ciphertext",
                     hex::encode(&encrypted.body).parse().unwrap(),
                 );
                 Bytes::new()
             };
-            let uri: Uri = format!("/v1/zolana{route}").parse().unwrap();
+            let uri: Uri = format!("/v1/spr{route}").parse().unwrap();
             if !post {
                 let mut missing_auth = headers.clone();
                 missing_auth.remove("x-sf-auth");
@@ -804,7 +804,7 @@ mod http_tests {
                     Err(Failure(StatusCode::UNAUTHORIZED, _))
                 ));
                 let mut plaintext = headers.clone();
-                plaintext.remove("zolana-tee-ciphertext");
+                plaintext.remove("spr-tee-ciphertext");
                 assert!(matches!(
                     proxy(
                         State(app.clone()),
@@ -821,7 +821,7 @@ mod http_tests {
                         State(app.clone()),
                         headers.clone(),
                         method.clone(),
-                        "/v1/zolana/prove/merge_24_1/status?jobId=a&jobId=b"
+                        "/v1/spr/prove/merge_24_1/status?jobId=a&jobId=b"
                             .parse()
                             .unwrap(),
                         body.clone()
@@ -842,7 +842,7 @@ mod http_tests {
                     StatusCode::OK
                 }
             );
-            assert_eq!(response.headers()["zolana-tee"], "v1");
+            assert_eq!(response.headers()["spr-tee"], "v1");
             let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
             let (status, plain) = encrypted.decrypt(&bytes).unwrap();
             assert_eq!(status, if post { 202 } else { 200 });
@@ -862,11 +862,11 @@ mod http_tests {
             post(|headers: HeaderMap, body: Bytes| async move {
                 assert!(headers.get("x-sf-auth").is_none());
                 assert_eq!(headers["x-sync"], "true");
-                assert_eq!(headers["zolana-tee-enc"], "opaque-key");
+                assert_eq!(headers["spr-tee-enc"], "opaque-key");
                 assert_eq!(body.as_ref(), &[1, 2, 3]);
                 (
                     [
-                        ("zolana-tee", "1"),
+                        ("spr-tee", "1"),
                         ("content-type", "application/octet-stream"),
                     ],
                     vec![4u8, 5, 6],
@@ -890,13 +890,13 @@ mod http_tests {
         for (name, value) in [
             ("x-sf-auth", "token"),
             ("x-sync", "true"),
-            ("zolana-tee", "1"),
-            ("zolana-tee-enc", "opaque-key"),
+            ("spr-tee", "1"),
+            ("spr-tee-enc", "opaque-key"),
             ("content-type", "application/octet-stream"),
         ] {
             headers.insert(name, value.parse().unwrap());
         }
-        let uri: Uri = "/v1/zolana/prove/merge_8_1".parse().unwrap();
+        let uri: Uri = "/v1/spr/prove/merge_8_1".parse().unwrap();
         let response = proxy(
             State(app.clone()),
             headers.clone(),
@@ -907,7 +907,7 @@ mod http_tests {
         .await
         .ok()
         .unwrap();
-        assert_eq!(response.headers()["zolana-tee"], "1");
+        assert_eq!(response.headers()["spr-tee"], "1");
         assert_eq!(
             to_bytes(response.into_body(), 100).await.unwrap().as_ref(),
             &[4, 5, 6]
@@ -930,7 +930,7 @@ mod http_tests {
                 State(app),
                 headers,
                 Method::GET,
-                "/v1/zolana/prove/transfer_confidential_2_2/status"
+                "/v1/spr/prove/transfer_confidential_2_2/status"
                     .parse()
                     .unwrap(),
                 Bytes::new()

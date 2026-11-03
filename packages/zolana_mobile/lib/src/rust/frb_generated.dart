@@ -2821,6 +2821,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ProverTeeNetwork dco_decode_box_autoadd_prover_tee_network(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_prover_tee_network(raw);
+  }
+
+  @protected
   Proving dco_decode_box_autoadd_proving(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_proving(raw);
@@ -3107,6 +3113,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ProverTeeNetwork? dco_decode_opt_box_autoadd_prover_tee_network(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_prover_tee_network(raw);
+  }
+
+  @protected
   Proving? dco_decode_opt_box_autoadd_proving(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_proving(raw);
@@ -3212,6 +3224,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       verifyMs: dco_decode_u_64(arr[7]),
       totalMs: dco_decode_u_64(arr[8]),
     );
+  }
+
+  @protected
+  ProverTeeNetwork dco_decode_prover_tee_network(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ProverTeeNetwork.values[raw as int];
   }
 
   @protected
@@ -3419,8 +3437,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletConfig dco_decode_wallet_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return WalletConfig(
       rpcUrl: dco_decode_String(arr[0]),
       indexerUrl: dco_decode_String(arr[1]),
@@ -3431,11 +3449,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       proverUrl: dco_decode_opt_String(arr[6]),
       requireProverTee: dco_decode_opt_box_autoadd_bool(arr[7]),
       proverTeePolicy: dco_decode_opt_String(arr[8]),
-      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[9]),
-      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[10]),
-      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[11]),
-      mints: dco_decode_opt_list_mint_config(arr[12]),
-      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[13]),
+      proverTeeNetwork: dco_decode_opt_box_autoadd_prover_tee_network(arr[9]),
+      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[10]),
+      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[11]),
+      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[12]),
+      mints: dco_decode_opt_list_mint_config(arr[13]),
+      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[14]),
     );
   }
 
@@ -3944,6 +3963,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ProverTeeNetwork sse_decode_box_autoadd_prover_tee_network(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_prover_tee_network(deserializer));
+  }
+
+  @protected
   Proving sse_decode_box_autoadd_proving(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_proving(deserializer));
@@ -4349,6 +4376,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ProverTeeNetwork? sse_decode_opt_box_autoadd_prover_tee_network(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_prover_tee_network(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   Proving? sse_decode_opt_box_autoadd_proving(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -4511,6 +4551,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       verifyMs: var_verifyMs,
       totalMs: var_totalMs,
     );
+  }
+
+  @protected
+  ProverTeeNetwork sse_decode_prover_tee_network(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ProverTeeNetwork.values[inner];
   }
 
   @protected
@@ -4737,6 +4784,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_proverUrl = sse_decode_opt_String(deserializer);
     var var_requireProverTee = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_proverTeePolicy = sse_decode_opt_String(deserializer);
+    var var_proverTeeNetwork = sse_decode_opt_box_autoadd_prover_tee_network(
+      deserializer,
+    );
     var var_proverSyncOnly = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_maxSpendInputs = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_reuseNotesMs = sse_decode_opt_box_autoadd_u_64(deserializer);
@@ -4752,6 +4802,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       proverUrl: var_proverUrl,
       requireProverTee: var_requireProverTee,
       proverTeePolicy: var_proverTeePolicy,
+      proverTeeNetwork: var_proverTeeNetwork,
       proverSyncOnly: var_proverSyncOnly,
       maxSpendInputs: var_maxSpendInputs,
       reuseNotesMs: var_reuseNotesMs,
@@ -5349,6 +5400,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_prover_tee_network(
+    ProverTeeNetwork self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_prover_tee_network(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_proving(Proving self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_proving(self, serializer);
@@ -5737,6 +5797,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_prover_tee_network(
+    ProverTeeNetwork? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_prover_tee_network(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_proving(
     Proving? self,
     SseSerializer serializer,
@@ -5873,6 +5946,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.proveMs, serializer);
     sse_encode_u_64(self.verifyMs, serializer);
     sse_encode_u_64(self.totalMs, serializer);
+  }
+
+  @protected
+  void sse_encode_prover_tee_network(
+    ProverTeeNetwork self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -6067,6 +6149,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.proverUrl, serializer);
     sse_encode_opt_box_autoadd_bool(self.requireProverTee, serializer);
     sse_encode_opt_String(self.proverTeePolicy, serializer);
+    sse_encode_opt_box_autoadd_prover_tee_network(
+      self.proverTeeNetwork,
+      serializer,
+    );
     sse_encode_opt_box_autoadd_bool(self.proverSyncOnly, serializer);
     sse_encode_opt_box_autoadd_u_32(self.maxSpendInputs, serializer);
     sse_encode_opt_box_autoadd_u_64(self.reuseNotesMs, serializer);
