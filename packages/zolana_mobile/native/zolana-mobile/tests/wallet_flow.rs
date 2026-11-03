@@ -290,10 +290,9 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
         Operation::Deposit { .. } | Operation::Spend { .. } | Operation::Merge { .. }
     ) {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let owner = zolana_keypair::ShieldedAddress::from_str(&wallet.shielded_address())
-            .unwrap()
-            .solana_address()
-            .unwrap();
+        let address =
+            zolana_keypair::ShieldedAddress::from_str(&wallet.shielded_address()).unwrap();
+        let owner = address.solana_address().unwrap();
         let mut cold = MobileWallet::open_with_keys(
             config(),
             owner.to_string(),
@@ -304,11 +303,24 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
         let lookup = cold
             .transaction(signature.clone())
             .expect("cold signature lookup");
-        assert_eq!(
-            lookup.status,
-            TransactionLookupStatus::Ready,
-            "lookup after {operation:?}"
-        );
+        // Published padding names a participant. Without change of the
+        // sender's own, an exact-balance send tags its dummy with the
+        // recipient, which a cold reader cannot authenticate as padding and
+        // reports as incomplete rather than guessing.
+        let outputs = pending.outputs();
+        let own_key = address.signing_pubkey.as_bytes().to_vec();
+        let padded = outputs
+            .iter()
+            .any(|output| output.owner_signing_key.is_none() && !output.compact)
+            && !outputs
+                .iter()
+                .any(|output| output.owner_signing_key.as_ref() == Some(&own_key));
+        let expected_status = if padded {
+            TransactionLookupStatus::Incomplete
+        } else {
+            TransactionLookupStatus::Ready
+        };
+        assert_eq!(lookup.status, expected_status, "lookup after {operation:?}");
         let confirmed = SolanaRpc::new(required("ZOLANA_E2E_RPC_URL"))
             .client()
             .send::<EncodedConfirmedTransactionWithStatusMeta>(
@@ -342,7 +354,7 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             })
             .collect();
         let mut expected_outputs = Vec::new();
-        if let Operation::Spend { mint, outputs, .. } = &operation {
+        if let (false, Operation::Spend { mint, outputs, .. }) = (padded, &operation) {
             for output in outputs {
                 let (recipient, amount, is_public) = match output {
                     Output::Private { recipient, amount } if recipient != &owner.to_string() => {
@@ -382,6 +394,14 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             .contains(&method.as_str())),
             "a lookup must not scan history"
         );
+        if padded {
+            assert!(lookup.entries.is_empty());
+            println!(
+                "cold lookup {signature} is incomplete for recipient-tagged padding, time {:?}, fee {:?}",
+                lookup.block_time, lookup.fee,
+            );
+            return signature;
+        }
         let expected = cold
             .activity()
             .unwrap()
