@@ -208,6 +208,31 @@ impl MobileWallet {
             &merge.dummy_nullifiers(),
             None,
         )?;
+        let input_tree = pda::tree(target.tree_id);
+        let trees = witnesses
+            .spend_proofs
+            .iter()
+            .flat_map(|proof| {
+                [
+                    proof.state.merkle_context.tree,
+                    proof.nullifier.merkle_context.tree,
+                ]
+            })
+            .chain(
+                witnesses
+                    .dummy_nullifier_proofs
+                    .iter()
+                    .map(|proof| proof.merkle_context.tree),
+            );
+        for proof_tree in trees {
+            if proof_tree != input_tree {
+                return Err(ClientError::MergeInputTreeMismatch {
+                    proof_tree: proof_tree.to_bytes(),
+                    input_tree: input_tree.to_bytes(),
+                }
+                .into());
+            }
+        }
         let result = MergeProver {
             transaction: merge,
             nullifier_key: self.nullifier_key.clone(),
@@ -229,7 +254,7 @@ impl MobileWallet {
         };
         verify_merge(&result, &proof)?;
         let merge_ix = MergeTransact {
-            input_tree: pda::tree(target.tree_id),
+            input_tree,
             output_tree: pda::tree(target.tree_id),
             payer,
             user_record: user_record_pda(&self.owner).0,
