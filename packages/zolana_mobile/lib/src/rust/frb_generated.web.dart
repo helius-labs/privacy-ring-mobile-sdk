@@ -297,6 +297,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SpendLimit> dco_decode_list_spend_limit(dynamic raw);
 
   @protected
+  List<SpendableNote> dco_decode_list_spendable_note(dynamic raw);
+
+  @protected
   List<TokenBalance> dco_decode_list_token_balance(dynamic raw);
 
   @protected
@@ -354,6 +357,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw);
+
+  @protected
   List<MintConfig>? dco_decode_opt_list_mint_config(dynamic raw);
 
   @protected
@@ -388,6 +394,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpendLimit dco_decode_spend_limit(dynamic raw);
+
+  @protected
+  SpendableNote dco_decode_spendable_note(dynamic raw);
 
   @protected
   TokenBalance dco_decode_token_balance(dynamic raw);
@@ -704,6 +713,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SpendLimit> sse_decode_list_spend_limit(SseDeserializer deserializer);
 
   @protected
+  List<SpendableNote> sse_decode_list_spendable_note(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<TokenBalance> sse_decode_list_token_balance(
     SseDeserializer deserializer,
   );
@@ -771,6 +785,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+
+  @protected
   List<MintConfig>? sse_decode_opt_list_mint_config(
     SseDeserializer deserializer,
   );
@@ -813,6 +830,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpendLimit sse_decode_spend_limit(SseDeserializer deserializer);
+
+  @protected
+  SpendableNote sse_decode_spendable_note(SseDeserializer deserializer);
 
   @protected
   TokenBalance sse_decode_token_balance(SseDeserializer deserializer);
@@ -1206,6 +1226,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_spendable_note(
+    List<SpendableNote> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_token_balance(
     List<TokenBalance> self,
     SseSerializer serializer,
@@ -1289,6 +1315,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_list_mint_config(
     List<MintConfig>? self,
     SseSerializer serializer,
@@ -1344,6 +1373,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_spend_limit(SpendLimit self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_spendable_note(SpendableNote self, SseSerializer serializer);
 
   @protected
   void sse_encode_token_balance(TokenBalance self, SseSerializer serializer);

@@ -81,7 +81,9 @@ use crate::{
 mod cache;
 mod history;
 mod lookup;
+mod notes;
 pub use cache::{CacheTarget, CachedOutput};
+pub use notes::SpendableNote;
 
 /// Where the wallet reads chain state and stores proving keys.
 pub struct WalletConfig {
@@ -2462,7 +2464,7 @@ mod tests {
 
     /// A SOL note of `amount` on `tree_id` whose nullifier is
     /// `[nullifier; 32]`.
-    fn note(amount: u64, nullifier: u8, tree_id: u16) -> WalletUtxo {
+    pub(super) fn note(amount: u64, nullifier: u8, tree_id: u16) -> WalletUtxo {
         WalletUtxo {
             utxo: zolana_transaction::Utxo {
                 owner: PublicKey::from_ed25519(&[1; 32]),

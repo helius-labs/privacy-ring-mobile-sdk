@@ -1128,6 +1128,7 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
                     Some(2),
                     Some(Proving::Remote),
                     Some(5_000),
+                    None,
                 )
                 .expect("prepare cached merge through authenticated TEE proxy");
             assert_eq!(pending.signers(), vec![pending.fee_payer()]);

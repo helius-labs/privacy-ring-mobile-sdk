@@ -2,6 +2,13 @@
 
 Unreleased.
 
+* Add `spendableNotes()` with stable commitment IDs, mint, amount, tree ID and
+  merge eligibility, excluding zero-value and reserved notes.
+* Add exact ordered `inputIds` to `prepareMerge(cacheTarget: ...)`. Infer the
+  mint and reject missing, reserved, duplicate or incompatible inputs without
+  replacements. The sponsored example persists every round's IDs before merging
+  so new arrivals and restarts cannot change the plan.
+
 * Return `blockTime` (Unix seconds) and `fee` (network fee in lamports) from
   transaction lookup's existing RPC response. `outputs` lists each outgoing
   private payment and public withdrawal separately, with recipient, mint,
