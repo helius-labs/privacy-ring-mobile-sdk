@@ -89,7 +89,10 @@ void main() {
     proving: proving,
   );
 
-  Future<void> checkFreshLookup(ZolanaWallet wallet, String signature) async {
+  Future<TransactionLookup> checkFreshLookup(
+    ZolanaWallet wallet,
+    String signature,
+  ) async {
     final transport = AppTransport();
     final cold = await ZolanaWallet.openWithKeys(
       config: await config(),
@@ -105,6 +108,12 @@ void main() {
         'cold signature lookup: ${clock.elapsedMilliseconds} ms, ${result.entries.length} rows',
       );
       expect(result.status, TransactionLookupStatus.ready);
+      expect(result.blockTime, isNotNull);
+      expect(result.fee, greaterThan(BigInt.zero));
+      expect(
+        result.entries.map((row) => row.blockTime),
+        everyElement(result.blockTime),
+      );
       expect(
         transport.sent,
         anyElement(endsWith('/getShieldedTransactionsBySignature')),
@@ -123,6 +132,12 @@ void main() {
           .where((row) => row.signature == signature)
           .toList();
       expect(result.entries, orderedEquals(expected));
+      final overview = await wallet.overview();
+      expect(
+        overview.activity.where((row) => row.signature == signature),
+        orderedEquals(result.entries),
+      );
+      return result;
     } finally {
       await cold.close();
       transport.close();
@@ -206,7 +221,21 @@ void main() {
       '(proving key download, proof, signing, confirmation)',
     );
 
-    await checkFreshLookup(sender, signature);
+    final lookup = await checkFreshLookup(sender, signature);
+    expect(
+      lookup.outputs.map(
+        (output) =>
+            (output.recipient, output.mint, output.amount, output.isPublic),
+      ),
+      unorderedEquals([
+        (demoAccounts[1].publicKey, null, lamports, false),
+        (demoFeeCollector.publicKey, null, fee, false),
+      ]),
+    );
+    expect(
+      lookup.entries.single.recipients,
+      unorderedEquals([demoAccounts[1].publicKey, demoFeeCollector.publicKey]),
+    );
     await checkFreshLookup(recipient, signature);
     await checkFreshLookup(collector, signature);
 

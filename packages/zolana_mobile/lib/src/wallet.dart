@@ -269,7 +269,12 @@ class ZolanaWallet {
   /// per asset each transaction moved. A spend with a note for another
   /// wallet is listed as `sent`, for its whole total; one with only public
   /// outputs, whose notes are all this wallet's own, as `withdrawal`. The
-  /// indexer does not say which spends were withdrawals.
+  /// indexer does not say which spends were withdrawals. Each row includes
+  /// private [native.ActivityEntry.recipients] from non-own output tags.
+  /// [native.ActivityEntry.blockTime] is Unix seconds, fetched for a bounded
+  /// number of the newest uncached slots per read. A slot without a
+  /// timestamp leaves it `null`, asked for again after a growing wait,
+  /// without failing the activity read.
   Future<List<native.ActivityEntry>> activity() => _serial(_wallet.activity);
 
   /// Fetch and decrypt every activity row for one signature, without scanning
@@ -280,6 +285,11 @@ class ZolanaWallet {
   /// rows for the wallet's configured assets. Pending indexing, unavailable
   /// transactions and incomplete details have distinct statuses; network
   /// errors throw. Row identities match [activity] and [overview].
+  /// [native.TransactionLookup.blockTime] and [native.TransactionLookup.fee]
+  /// come from the same RPC response (Unix seconds and lamports). Outgoing
+  /// [native.TransactionLookup.outputs] separate private payments, including
+  /// application fees, from public withdrawals, excluding change and padding.
+  /// Public SPL recipients are settlement token accounts.
   Future<native.TransactionLookup> transaction(String signature) =>
       _serial(() => _wallet.transaction(signature: signature));
 

@@ -2804,6 +2804,8 @@ const _: fn() = || {
         let _: u64 = ActivityEntry.amount;
         let _: String = ActivityEntry.signature;
         let _: u64 = ActivityEntry.slot;
+        let _: Option<i64> = ActivityEntry.block_time;
+        let _: Vec<String> = ActivityEntry.recipients;
         let _: u64 = ActivityEntry.index;
     }
     {
@@ -2931,8 +2933,18 @@ const _: fn() = || {
         let TransactionLookup = None::<zolana_mobile::TransactionLookup>.unwrap();
         let _: zolana_mobile::TransactionLookupStatus = TransactionLookup.status;
         let _: Vec<zolana_mobile::ActivityEntry> = TransactionLookup.entries;
+        let _: Vec<zolana_mobile::TransactionOutput> = TransactionLookup.outputs;
         let _: Option<u64> = TransactionLookup.slot;
+        let _: Option<i64> = TransactionLookup.block_time;
+        let _: Option<u64> = TransactionLookup.fee;
         let _: u64 = TransactionLookup.indexed_slot;
+    }
+    {
+        let TransactionOutput = None::<zolana_mobile::TransactionOutput>.unwrap();
+        let _: String = TransactionOutput.recipient;
+        let _: Option<String> = TransactionOutput.mint;
+        let _: u64 = TransactionOutput.amount;
+        let _: bool = TransactionOutput.is_public;
     }
     {
         let TransportFailure = None::<zolana_mobile::TransportFailure>.unwrap();
@@ -3395,6 +3407,8 @@ impl SseDecode for zolana_mobile::ActivityEntry {
         let mut var_amount = <u64>::sse_decode(deserializer);
         let mut var_signature = <String>::sse_decode(deserializer);
         let mut var_slot = <u64>::sse_decode(deserializer);
+        let mut var_blockTime = <Option<i64>>::sse_decode(deserializer);
+        let mut var_recipients = <Vec<String>>::sse_decode(deserializer);
         let mut var_index = <u64>::sse_decode(deserializer);
         return zolana_mobile::ActivityEntry {
             kind: var_kind,
@@ -3402,6 +3416,8 @@ impl SseDecode for zolana_mobile::ActivityEntry {
             amount: var_amount,
             signature: var_signature,
             slot: var_slot,
+            block_time: var_blockTime,
+            recipients: var_recipients,
             index: var_index,
         };
     }
@@ -3640,6 +3656,18 @@ impl SseDecode for Vec<zolana_mobile::TokenBalance> {
     }
 }
 
+impl SseDecode for Vec<zolana_mobile::TransactionOutput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<zolana_mobile::TransactionOutput>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for zolana_mobile::LocalProofResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3769,6 +3797,17 @@ impl SseDecode for Option<bool> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<bool>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -4073,12 +4112,18 @@ impl SseDecode for zolana_mobile::TransactionLookup {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_status = <zolana_mobile::TransactionLookupStatus>::sse_decode(deserializer);
         let mut var_entries = <Vec<zolana_mobile::ActivityEntry>>::sse_decode(deserializer);
+        let mut var_outputs = <Vec<zolana_mobile::TransactionOutput>>::sse_decode(deserializer);
         let mut var_slot = <Option<u64>>::sse_decode(deserializer);
+        let mut var_blockTime = <Option<i64>>::sse_decode(deserializer);
+        let mut var_fee = <Option<u64>>::sse_decode(deserializer);
         let mut var_indexedSlot = <u64>::sse_decode(deserializer);
         return zolana_mobile::TransactionLookup {
             status: var_status,
             entries: var_entries,
+            outputs: var_outputs,
             slot: var_slot,
+            block_time: var_blockTime,
+            fee: var_fee,
             indexed_slot: var_indexedSlot,
         };
     }
@@ -4094,6 +4139,22 @@ impl SseDecode for zolana_mobile::TransactionLookupStatus {
             2 => zolana_mobile::TransactionLookupStatus::NotFound,
             3 => zolana_mobile::TransactionLookupStatus::Incomplete,
             _ => unreachable!("Invalid variant for TransactionLookupStatus: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for zolana_mobile::TransactionOutput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_recipient = <String>::sse_decode(deserializer);
+        let mut var_mint = <Option<String>>::sse_decode(deserializer);
+        let mut var_amount = <u64>::sse_decode(deserializer);
+        let mut var_isPublic = <bool>::sse_decode(deserializer);
+        return zolana_mobile::TransactionOutput {
+            recipient: var_recipient,
+            mint: var_mint,
+            amount: var_amount,
+            is_public: var_isPublic,
         };
     }
 }
@@ -4804,6 +4865,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::ActivityEntry> 
             self.0.amount.into_into_dart().into_dart(),
             self.0.signature.into_into_dart().into_dart(),
             self.0.slot.into_into_dart().into_dart(),
+            self.0.block_time.into_into_dart().into_dart(),
+            self.0.recipients.into_into_dart().into_dart(),
             self.0.index.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -5230,7 +5293,10 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::TransactionLook
         [
             self.0.status.into_into_dart().into_dart(),
             self.0.entries.into_into_dart().into_dart(),
+            self.0.outputs.into_into_dart().into_dart(),
             self.0.slot.into_into_dart().into_dart(),
+            self.0.block_time.into_into_dart().into_dart(),
+            self.0.fee.into_into_dart().into_dart(),
             self.0.indexed_slot.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -5267,6 +5333,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zolana_mobile::TransactionLook
     for zolana_mobile::TransactionLookupStatus
 {
     fn into_into_dart(self) -> FrbWrapper<zolana_mobile::TransactionLookupStatus> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::TransactionOutput> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.recipient.into_into_dart().into_dart(),
+            self.0.mint.into_into_dart().into_dart(),
+            self.0.amount.into_into_dart().into_dart(),
+            self.0.is_public.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zolana_mobile::TransactionOutput>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zolana_mobile::TransactionOutput>>
+    for zolana_mobile::TransactionOutput
+{
+    fn into_into_dart(self) -> FrbWrapper<zolana_mobile::TransactionOutput> {
         self.into()
     }
 }
@@ -5784,6 +5873,8 @@ impl SseEncode for zolana_mobile::ActivityEntry {
         <u64>::sse_encode(self.amount, serializer);
         <String>::sse_encode(self.signature, serializer);
         <u64>::sse_encode(self.slot, serializer);
+        <Option<i64>>::sse_encode(self.block_time, serializer);
+        <Vec<String>>::sse_encode(self.recipients, serializer);
         <u64>::sse_encode(self.index, serializer);
     }
 }
@@ -5991,6 +6082,16 @@ impl SseEncode for Vec<zolana_mobile::TokenBalance> {
     }
 }
 
+impl SseEncode for Vec<zolana_mobile::TransactionOutput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <zolana_mobile::TransactionOutput>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for zolana_mobile::LocalProofResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6096,6 +6197,16 @@ impl SseEncode for Option<bool> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <bool>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i64>::sse_encode(value, serializer);
         }
     }
 }
@@ -6345,7 +6456,10 @@ impl SseEncode for zolana_mobile::TransactionLookup {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <zolana_mobile::TransactionLookupStatus>::sse_encode(self.status, serializer);
         <Vec<zolana_mobile::ActivityEntry>>::sse_encode(self.entries, serializer);
+        <Vec<zolana_mobile::TransactionOutput>>::sse_encode(self.outputs, serializer);
         <Option<u64>>::sse_encode(self.slot, serializer);
+        <Option<i64>>::sse_encode(self.block_time, serializer);
+        <Option<u64>>::sse_encode(self.fee, serializer);
         <u64>::sse_encode(self.indexed_slot, serializer);
     }
 }
@@ -6365,6 +6479,16 @@ impl SseEncode for zolana_mobile::TransactionLookupStatus {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for zolana_mobile::TransactionOutput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.recipient, serializer);
+        <Option<String>>::sse_encode(self.mint, serializer);
+        <u64>::sse_encode(self.amount, serializer);
+        <bool>::sse_encode(self.is_public, serializer);
     }
 }
 

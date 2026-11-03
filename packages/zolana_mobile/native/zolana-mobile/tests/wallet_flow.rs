@@ -45,7 +45,9 @@ use solana_address::Address;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
+use solana_rpc_client_api::request::RpcRequest;
 use solana_signer::Signer;
+use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
 use zolana_client::{ComputeBudgetConfig, Rpc, SolanaRpc};
 use zolana_interface::{
     pda, SPL_TOKEN_INITIALIZE_MINT2_DISCRIMINATOR, SPL_TOKEN_MINT_ACCOUNT_LEN,
@@ -288,10 +290,9 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
         Operation::Deposit { .. } | Operation::Spend { .. } | Operation::Merge { .. }
     ) {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let owner = zolana_keypair::ShieldedAddress::from_str(&wallet.shielded_address())
-            .unwrap()
-            .solana_address()
-            .unwrap();
+        let address =
+            zolana_keypair::ShieldedAddress::from_str(&wallet.shielded_address()).unwrap();
+        let owner = address.solana_address().unwrap();
         let mut cold = MobileWallet::open_with_keys(
             config(),
             owner.to_string(),
@@ -302,10 +303,87 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
         let lookup = cold
             .transaction(signature.clone())
             .expect("cold signature lookup");
+        // Published padding names a participant. Without change of the
+        // sender's own, an exact-balance send tags its dummy with the
+        // recipient, which a cold reader cannot authenticate as padding and
+        // reports as incomplete rather than guessing.
+        let outputs = pending.outputs();
+        let own_key = address.signing_pubkey.as_bytes().to_vec();
+        let padded = outputs
+            .iter()
+            .any(|output| output.owner_signing_key.is_none() && !output.compact)
+            && !outputs
+                .iter()
+                .any(|output| output.owner_signing_key.as_ref() == Some(&own_key));
+        let expected_status = if padded {
+            TransactionLookupStatus::Incomplete
+        } else {
+            TransactionLookupStatus::Ready
+        };
+        assert_eq!(lookup.status, expected_status, "lookup after {operation:?}");
+        let confirmed = SolanaRpc::new(required("ZOLANA_E2E_RPC_URL"))
+            .client()
+            .send::<EncodedConfirmedTransactionWithStatusMeta>(
+                RpcRequest::GetTransaction,
+                serde_json::json!([signature, {
+                    "encoding": "json", "commitment": "confirmed", "maxSupportedTransactionVersion": 1
+                }]),
+            )
+            .expect("independent confirmed metadata");
+        assert_eq!(lookup.block_time, confirmed.block_time);
+        assert!(
+            lookup.block_time.is_some(),
+            "fresh transactions have a block time"
+        );
+        assert_eq!(lookup.fee, confirmed.transaction.meta.map(|meta| meta.fee),);
+        assert!(lookup.fee.is_some());
+        assert!(lookup
+            .entries
+            .iter()
+            .all(|entry| entry.block_time == lookup.block_time));
+        let mut actual_outputs: Vec<_> = lookup
+            .outputs
+            .iter()
+            .map(|output| {
+                (
+                    output.mint.clone(),
+                    output.recipient.clone(),
+                    output.amount,
+                    output.is_public,
+                )
+            })
+            .collect();
+        let mut expected_outputs = Vec::new();
+        if let (false, Operation::Spend { mint, outputs, .. }) = (padded, &operation) {
+            for output in outputs {
+                let (recipient, amount, is_public) = match output {
+                    Output::Private { recipient, amount } if recipient != &owner.to_string() => {
+                        (recipient.clone(), *amount, false)
+                    }
+                    Output::Private { .. } => continue,
+                    Output::Public { recipient, amount } => {
+                        let recipient = mint.as_ref().map_or_else(
+                            || recipient.clone(),
+                            |mint| {
+                                pda::associated_token_address_with_program(
+                                    &recipient.parse().unwrap(),
+                                    &mint.parse().unwrap(),
+                                    &Pubkey::new_from_array(SPL_TOKEN_PROGRAM_ID),
+                                )
+                                .to_string()
+                            },
+                        );
+                        (recipient, *amount, true)
+                    }
+                };
+                expected_outputs.push((mint.clone(), recipient, amount, is_public));
+            }
+        }
+        actual_outputs.sort();
+        expected_outputs.sort();
         assert_eq!(
-            lookup.status,
-            TransactionLookupStatus::Ready,
-            "lookup after {operation:?}"
+            actual_outputs, expected_outputs,
+            "every outgoing payment survives lookup"
         );
         assert!(
             calls.lock().unwrap().iter().all(|method| ![
@@ -316,6 +394,14 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             .contains(&method.as_str())),
             "a lookup must not scan history"
         );
+        if padded {
+            assert!(lookup.entries.is_empty());
+            println!(
+                "cold lookup {signature} is incomplete for recipient-tagged padding, time {:?}, fee {:?}",
+                lookup.block_time, lookup.fee,
+            );
+            return signature;
+        }
         let expected = cold
             .activity()
             .unwrap()
@@ -326,9 +412,21 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             lookup.entries, expected,
             "signature lookup agrees with history"
         );
+        if matches!(operation, Operation::Spend { .. }) {
+            let overview = cold.overview().expect("overview after spend");
+            let expected = overview
+                .activity
+                .into_iter()
+                .filter(|entry| entry.signature == signature)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                lookup.entries, expected,
+                "overview carries the same timestamps and recipients"
+            );
+        }
         println!(
-            "cold lookup returned {} rows without history pages",
-            lookup.entries.len()
+            "cold lookup {signature} returned {} rows, {} outputs, time {:?}, fee {:?} without history pages",
+            lookup.entries.len(), lookup.outputs.len(), lookup.block_time, lookup.fee,
         );
     }
     signature

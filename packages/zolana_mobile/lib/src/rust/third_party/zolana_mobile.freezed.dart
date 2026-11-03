@@ -13,6 +13,291 @@ part of 'zolana_mobile.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$ActivityEntry {
+
+ ActivityKind get kind; String? get mint; BigInt get amount; String get signature; BigInt get slot; PlatformInt64? get blockTime; List<String> get recipients; BigInt get index;
+/// Create a copy of ActivityEntry
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ActivityEntryCopyWith<ActivityEntry> get copyWith => _$ActivityEntryCopyWithImpl<ActivityEntry>(this as ActivityEntry, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ActivityEntry;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ActivityEntry&&(identical(other.kind, _this.kind) || other.kind == _this.kind)&&(identical(other.mint, _this.mint) || other.mint == _this.mint)&&(identical(other.amount, _this.amount) || other.amount == _this.amount)&&(identical(other.signature, _this.signature) || other.signature == _this.signature)&&(identical(other.slot, _this.slot) || other.slot == _this.slot)&&(identical(other.blockTime, _this.blockTime) || other.blockTime == _this.blockTime)&&const DeepCollectionEquality().equals(other.recipients, _this.recipients)&&(identical(other.index, _this.index) || other.index == _this.index));
+}
+
+
+@override
+int get hashCode {
+  final _this = this as ActivityEntry;
+  return Object.hash(runtimeType,_this.kind,_this.mint,_this.amount,_this.signature,_this.slot,_this.blockTime,const DeepCollectionEquality().hash(_this.recipients),_this.index);
+}
+
+@override
+String toString() {
+  final _this = this as ActivityEntry;
+  return 'ActivityEntry(kind: ${_this.kind}, mint: ${_this.mint}, amount: ${_this.amount}, signature: ${_this.signature}, slot: ${_this.slot}, blockTime: ${_this.blockTime}, recipients: ${_this.recipients}, index: ${_this.index})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ActivityEntryCopyWith<$Res>  {
+  factory $ActivityEntryCopyWith(ActivityEntry value, $Res Function(ActivityEntry) _then) = _$ActivityEntryCopyWithImpl;
+@useResult
+$Res call({
+ ActivityKind kind, String? mint, BigInt amount, String signature, BigInt slot, PlatformInt64? blockTime, List<String> recipients, BigInt index
+});
+
+
+
+
+}
+/// @nodoc
+class _$ActivityEntryCopyWithImpl<$Res>
+    implements $ActivityEntryCopyWith<$Res> {
+  _$ActivityEntryCopyWithImpl(this._self, this._then);
+
+  final ActivityEntry _self;
+  final $Res Function(ActivityEntry) _then;
+
+/// Create a copy of ActivityEntry
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? kind = null,Object? mint = freezed,Object? amount = null,Object? signature = null,Object? slot = null,Object? blockTime = freezed,Object? recipients = null,Object? index = null,}) {
+  return _then(ActivityEntry(
+kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as ActivityKind,mint: freezed == mint ? _self.mint : mint // ignore: cast_nullable_to_non_nullable
+as String?,amount: null == amount ? _self.amount : amount // ignore: cast_nullable_to_non_nullable
+as BigInt,signature: null == signature ? _self.signature : signature // ignore: cast_nullable_to_non_nullable
+as String,slot: null == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as BigInt,blockTime: freezed == blockTime ? _self.blockTime : blockTime // ignore: cast_nullable_to_non_nullable
+as PlatformInt64?,recipients: null == recipients ? _self.recipients : recipients // ignore: cast_nullable_to_non_nullable
+as List<String>,index: null == index ? _self.index : index // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ActivityEntry].
+extension ActivityEntryPatterns on ActivityEntry {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ActivityEntry value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ActivityEntry() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ActivityEntry value)  $default,){
+final _that = this;
+switch (_that) {
+case _ActivityEntry():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ActivityEntry value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ActivityEntry() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( ActivityKind kind,  String? mint,  BigInt amount,  String signature,  BigInt slot,  PlatformInt64? blockTime,  List<String> recipients,  BigInt index)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ActivityEntry() when $default != null:
+return $default(_that.kind,_that.mint,_that.amount,_that.signature,_that.slot,_that.blockTime,_that.recipients,_that.index);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( ActivityKind kind,  String? mint,  BigInt amount,  String signature,  BigInt slot,  PlatformInt64? blockTime,  List<String> recipients,  BigInt index)  $default,) {final _that = this;
+switch (_that) {
+case _ActivityEntry():
+return $default(_that.kind,_that.mint,_that.amount,_that.signature,_that.slot,_that.blockTime,_that.recipients,_that.index);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( ActivityKind kind,  String? mint,  BigInt amount,  String signature,  BigInt slot,  PlatformInt64? blockTime,  List<String> recipients,  BigInt index)?  $default,) {final _that = this;
+switch (_that) {
+case _ActivityEntry() when $default != null:
+return $default(_that.kind,_that.mint,_that.amount,_that.signature,_that.slot,_that.blockTime,_that.recipients,_that.index);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _ActivityEntry implements ActivityEntry {
+  const _ActivityEntry({required this.kind, this.mint, required this.amount, required this.signature, required this.slot, this.blockTime,  List<String> recipients = const [], required this.index}): _recipients = recipients;
+  
+
+@override final  ActivityKind kind;
+@override final  String? mint;
+@override final  BigInt amount;
+@override final  String signature;
+@override final  BigInt slot;
+@override final  PlatformInt64? blockTime;
+ final  List<String> _recipients;
+@override@JsonKey() List<String> get recipients {
+  if (_recipients is EqualUnmodifiableListView) return _recipients;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_recipients);
+}
+
+@override final  BigInt index;
+
+/// Create a copy of ActivityEntry
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ActivityEntryCopyWith<_ActivityEntry> get copyWith => __$ActivityEntryCopyWithImpl<_ActivityEntry>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ActivityEntry&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.mint, mint) || other.mint == mint)&&(identical(other.amount, amount) || other.amount == amount)&&(identical(other.signature, signature) || other.signature == signature)&&(identical(other.slot, slot) || other.slot == slot)&&(identical(other.blockTime, blockTime) || other.blockTime == blockTime)&&const DeepCollectionEquality().equals(other.recipients, _recipients)&&(identical(other.index, index) || other.index == index));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,kind,mint,amount,signature,slot,blockTime,const DeepCollectionEquality().hash(_recipients),index);
+}
+
+@override
+String toString() {
+    return 'ActivityEntry(kind: $kind, mint: $mint, amount: $amount, signature: $signature, slot: $slot, blockTime: $blockTime, recipients: $recipients, index: $index)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ActivityEntryCopyWith<$Res> implements $ActivityEntryCopyWith<$Res> {
+  factory _$ActivityEntryCopyWith(_ActivityEntry value, $Res Function(_ActivityEntry) _then) = __$ActivityEntryCopyWithImpl;
+@override @useResult
+$Res call({
+ ActivityKind kind, String? mint, BigInt amount, String signature, BigInt slot, PlatformInt64? blockTime, List<String> recipients, BigInt index
+});
+
+
+
+
+}
+/// @nodoc
+class __$ActivityEntryCopyWithImpl<$Res>
+    implements _$ActivityEntryCopyWith<$Res> {
+  __$ActivityEntryCopyWithImpl(this._self, this._then);
+
+  final _ActivityEntry _self;
+  final $Res Function(_ActivityEntry) _then;
+
+/// Create a copy of ActivityEntry
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? kind = null,Object? mint = freezed,Object? amount = null,Object? signature = null,Object? slot = null,Object? blockTime = freezed,Object? recipients = null,Object? index = null,}) {
+  return _then(_ActivityEntry(
+kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as ActivityKind,mint: freezed == mint ? _self.mint : mint // ignore: cast_nullable_to_non_nullable
+as String?,amount: null == amount ? _self.amount : amount // ignore: cast_nullable_to_non_nullable
+as BigInt,signature: null == signature ? _self.signature : signature // ignore: cast_nullable_to_non_nullable
+as String,slot: null == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as BigInt,blockTime: freezed == blockTime ? _self.blockTime : blockTime // ignore: cast_nullable_to_non_nullable
+as PlatformInt64?,recipients: null == recipients ? _self._recipients : recipients // ignore: cast_nullable_to_non_nullable
+as List<String>,index: null == index ? _self.index : index // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$Operation {
 
 
@@ -926,6 +1211,294 @@ class _$Output_PublicCopyWithImpl<$Res>
   return _then(Output_Public(
 recipient: null == recipient ? _self.recipient : recipient // ignore: cast_nullable_to_non_nullable
 as String,amount: null == amount ? _self.amount : amount // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$TransactionLookup {
+
+ TransactionLookupStatus get status; List<ActivityEntry> get entries; List<TransactionOutput> get outputs; BigInt? get slot; PlatformInt64? get blockTime; BigInt? get fee; BigInt get indexedSlot;
+/// Create a copy of TransactionLookup
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$TransactionLookupCopyWith<TransactionLookup> get copyWith => _$TransactionLookupCopyWithImpl<TransactionLookup>(this as TransactionLookup, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as TransactionLookup;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is TransactionLookup&&(identical(other.status, _this.status) || other.status == _this.status)&&const DeepCollectionEquality().equals(other.entries, _this.entries)&&const DeepCollectionEquality().equals(other.outputs, _this.outputs)&&(identical(other.slot, _this.slot) || other.slot == _this.slot)&&(identical(other.blockTime, _this.blockTime) || other.blockTime == _this.blockTime)&&(identical(other.fee, _this.fee) || other.fee == _this.fee)&&(identical(other.indexedSlot, _this.indexedSlot) || other.indexedSlot == _this.indexedSlot));
+}
+
+
+@override
+int get hashCode {
+  final _this = this as TransactionLookup;
+  return Object.hash(runtimeType,_this.status,const DeepCollectionEquality().hash(_this.entries),const DeepCollectionEquality().hash(_this.outputs),_this.slot,_this.blockTime,_this.fee,_this.indexedSlot);
+}
+
+@override
+String toString() {
+  final _this = this as TransactionLookup;
+  return 'TransactionLookup(status: ${_this.status}, entries: ${_this.entries}, outputs: ${_this.outputs}, slot: ${_this.slot}, blockTime: ${_this.blockTime}, fee: ${_this.fee}, indexedSlot: ${_this.indexedSlot})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $TransactionLookupCopyWith<$Res>  {
+  factory $TransactionLookupCopyWith(TransactionLookup value, $Res Function(TransactionLookup) _then) = _$TransactionLookupCopyWithImpl;
+@useResult
+$Res call({
+ TransactionLookupStatus status, List<ActivityEntry> entries, List<TransactionOutput> outputs, BigInt? slot, PlatformInt64? blockTime, BigInt? fee, BigInt indexedSlot
+});
+
+
+
+
+}
+/// @nodoc
+class _$TransactionLookupCopyWithImpl<$Res>
+    implements $TransactionLookupCopyWith<$Res> {
+  _$TransactionLookupCopyWithImpl(this._self, this._then);
+
+  final TransactionLookup _self;
+  final $Res Function(TransactionLookup) _then;
+
+/// Create a copy of TransactionLookup
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? status = null,Object? entries = null,Object? outputs = null,Object? slot = freezed,Object? blockTime = freezed,Object? fee = freezed,Object? indexedSlot = null,}) {
+  return _then(TransactionLookup(
+status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as TransactionLookupStatus,entries: null == entries ? _self.entries : entries // ignore: cast_nullable_to_non_nullable
+as List<ActivityEntry>,outputs: null == outputs ? _self.outputs : outputs // ignore: cast_nullable_to_non_nullable
+as List<TransactionOutput>,slot: freezed == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as BigInt?,blockTime: freezed == blockTime ? _self.blockTime : blockTime // ignore: cast_nullable_to_non_nullable
+as PlatformInt64?,fee: freezed == fee ? _self.fee : fee // ignore: cast_nullable_to_non_nullable
+as BigInt?,indexedSlot: null == indexedSlot ? _self.indexedSlot : indexedSlot // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [TransactionLookup].
+extension TransactionLookupPatterns on TransactionLookup {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _TransactionLookup value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _TransactionLookup() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _TransactionLookup value)  $default,){
+final _that = this;
+switch (_that) {
+case _TransactionLookup():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _TransactionLookup value)?  $default,){
+final _that = this;
+switch (_that) {
+case _TransactionLookup() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( TransactionLookupStatus status,  List<ActivityEntry> entries,  List<TransactionOutput> outputs,  BigInt? slot,  PlatformInt64? blockTime,  BigInt? fee,  BigInt indexedSlot)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _TransactionLookup() when $default != null:
+return $default(_that.status,_that.entries,_that.outputs,_that.slot,_that.blockTime,_that.fee,_that.indexedSlot);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( TransactionLookupStatus status,  List<ActivityEntry> entries,  List<TransactionOutput> outputs,  BigInt? slot,  PlatformInt64? blockTime,  BigInt? fee,  BigInt indexedSlot)  $default,) {final _that = this;
+switch (_that) {
+case _TransactionLookup():
+return $default(_that.status,_that.entries,_that.outputs,_that.slot,_that.blockTime,_that.fee,_that.indexedSlot);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( TransactionLookupStatus status,  List<ActivityEntry> entries,  List<TransactionOutput> outputs,  BigInt? slot,  PlatformInt64? blockTime,  BigInt? fee,  BigInt indexedSlot)?  $default,) {final _that = this;
+switch (_that) {
+case _TransactionLookup() when $default != null:
+return $default(_that.status,_that.entries,_that.outputs,_that.slot,_that.blockTime,_that.fee,_that.indexedSlot);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _TransactionLookup implements TransactionLookup {
+  const _TransactionLookup({required this.status, required  List<ActivityEntry> entries,  List<TransactionOutput> outputs = const [], this.slot, this.blockTime, this.fee, required this.indexedSlot}): _entries = entries,_outputs = outputs;
+  
+
+@override final  TransactionLookupStatus status;
+ final  List<ActivityEntry> _entries;
+@override List<ActivityEntry> get entries {
+  if (_entries is EqualUnmodifiableListView) return _entries;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_entries);
+}
+
+ final  List<TransactionOutput> _outputs;
+@override@JsonKey() List<TransactionOutput> get outputs {
+  if (_outputs is EqualUnmodifiableListView) return _outputs;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_outputs);
+}
+
+@override final  BigInt? slot;
+@override final  PlatformInt64? blockTime;
+@override final  BigInt? fee;
+@override final  BigInt indexedSlot;
+
+/// Create a copy of TransactionLookup
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$TransactionLookupCopyWith<_TransactionLookup> get copyWith => __$TransactionLookupCopyWithImpl<_TransactionLookup>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _TransactionLookup&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.entries, _entries)&&const DeepCollectionEquality().equals(other.outputs, _outputs)&&(identical(other.slot, slot) || other.slot == slot)&&(identical(other.blockTime, blockTime) || other.blockTime == blockTime)&&(identical(other.fee, fee) || other.fee == fee)&&(identical(other.indexedSlot, indexedSlot) || other.indexedSlot == indexedSlot));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,status,const DeepCollectionEquality().hash(_entries),const DeepCollectionEquality().hash(_outputs),slot,blockTime,fee,indexedSlot);
+}
+
+@override
+String toString() {
+    return 'TransactionLookup(status: $status, entries: $entries, outputs: $outputs, slot: $slot, blockTime: $blockTime, fee: $fee, indexedSlot: $indexedSlot)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$TransactionLookupCopyWith<$Res> implements $TransactionLookupCopyWith<$Res> {
+  factory _$TransactionLookupCopyWith(_TransactionLookup value, $Res Function(_TransactionLookup) _then) = __$TransactionLookupCopyWithImpl;
+@override @useResult
+$Res call({
+ TransactionLookupStatus status, List<ActivityEntry> entries, List<TransactionOutput> outputs, BigInt? slot, PlatformInt64? blockTime, BigInt? fee, BigInt indexedSlot
+});
+
+
+
+
+}
+/// @nodoc
+class __$TransactionLookupCopyWithImpl<$Res>
+    implements _$TransactionLookupCopyWith<$Res> {
+  __$TransactionLookupCopyWithImpl(this._self, this._then);
+
+  final _TransactionLookup _self;
+  final $Res Function(_TransactionLookup) _then;
+
+/// Create a copy of TransactionLookup
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? status = null,Object? entries = null,Object? outputs = null,Object? slot = freezed,Object? blockTime = freezed,Object? fee = freezed,Object? indexedSlot = null,}) {
+  return _then(_TransactionLookup(
+status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as TransactionLookupStatus,entries: null == entries ? _self._entries : entries // ignore: cast_nullable_to_non_nullable
+as List<ActivityEntry>,outputs: null == outputs ? _self._outputs : outputs // ignore: cast_nullable_to_non_nullable
+as List<TransactionOutput>,slot: freezed == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as BigInt?,blockTime: freezed == blockTime ? _self.blockTime : blockTime // ignore: cast_nullable_to_non_nullable
+as PlatformInt64?,fee: freezed == fee ? _self.fee : fee // ignore: cast_nullable_to_non_nullable
+as BigInt?,indexedSlot: null == indexedSlot ? _self.indexedSlot : indexedSlot // ignore: cast_nullable_to_non_nullable
 as BigInt,
   ));
 }
@@ -2968,7 +3541,7 @@ String toString() {
 
 class WalletError_ProverPolicyMissing extends WalletError {
   const WalletError_ProverPolicyMissing(): super._();
-
+  
 
 
 
@@ -3596,7 +4169,7 @@ as String,
 
 class WalletError_ProvingKeyCatalogInvalid extends WalletError {
   const WalletError_ProvingKeyCatalogInvalid(): super._();
-
+  
 
 
 

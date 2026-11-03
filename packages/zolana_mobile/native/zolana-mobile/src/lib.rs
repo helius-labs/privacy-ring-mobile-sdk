@@ -25,7 +25,9 @@ mod prover;
 mod transport;
 mod wallet;
 
-pub use activity::{ActivityEntry, ActivityKind, TransactionLookup, TransactionLookupStatus};
+pub use activity::{
+    ActivityEntry, ActivityKind, TransactionLookup, TransactionLookupStatus, TransactionOutput,
+};
 pub use asset::MintConfig;
 pub use error::WalletError;
 pub use keys::{ProvingKeyProgress, ProvingKeyStatus, ProvingKeys, DEFAULT_PROVING_KEYS_URL};
