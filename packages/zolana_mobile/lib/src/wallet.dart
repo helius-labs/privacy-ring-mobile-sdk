@@ -271,9 +271,10 @@ class ZolanaWallet {
   /// outputs, whose notes are all this wallet's own, as `withdrawal`. The
   /// indexer does not say which spends were withdrawals. Each row includes
   /// private [native.ActivityEntry.recipients] from non-own output tags.
-  /// [native.ActivityEntry.blockTime] is Unix seconds, fetched once per
-  /// uncached slot with bounded concurrency. A missing timestamp or failed
-  /// time lookup leaves it `null` without failing the activity read.
+  /// [native.ActivityEntry.blockTime] is Unix seconds, fetched for a bounded
+  /// number of the newest uncached slots per read. A slot without a
+  /// timestamp leaves it `null`, asked for again after a growing wait,
+  /// without failing the activity read.
   Future<List<native.ActivityEntry>> activity() => _serial(_wallet.activity);
 
   /// Fetch and decrypt every activity row for one signature, without scanning

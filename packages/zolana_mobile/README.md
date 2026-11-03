@@ -239,21 +239,24 @@ await wallet.spend(
   SDK's per-output leaf index and should not be compared numerically with it.
 
   Rows also carry `blockTime` in Unix seconds. `activity()` and `overview()`
-  fill it with `getBlockTime` for each distinct uncached slot, at most eight
-  requests concurrently. Successful timestamps are cached for the open wallet,
-  including those learned by `transaction()`. Missing or failed time lookups
-  leave `null` and are retried on a later read; balances and amounts still
-  return normally. The indexer does not need to change.
+  fill it with `getBlockTime`, newest slots first, for at most 32 uncached
+  slots per read and eight requests at a time, so a long history does not
+  hold up balances; the remaining rows get their time on a later read.
+  Timestamps are cached for the open wallet, including those learned by
+  `transaction()`. A slot the RPC has no time for leaves `null` and is asked
+  for again after 30 seconds, doubling after every further miss, so a
+  non-archival RPC's old slots are not re-read on every call. Balances and
+  amounts still return normally. The indexer does not need to change.
 
   For outgoing rows, `recipients` contains sorted, unique non-own private
-  recipient addresses. Activity and overview read these from published tags
-  with no extra registry or transaction calls; ring discovery tags are omitted
-  because they are not wallet addresses. Tags do not identify assets, so a
-  multi-asset signature repeats its recipients on each outgoing activity row.
-  Transaction lookup can scope these addresses to the row's asset using its
-  verified outputs. Use `result.outputs` for individual amounts and public
-  destinations. The aggregated `kind` remains `sent` when any private payment
-  goes to another wallet, including a withdrawal's fee collector.
+  recipient addresses read from published tags, with no extra registry or
+  transaction calls; ring discovery tags are omitted because they are not
+  wallet addresses. Tags do not identify assets, so a multi-asset signature
+  repeats its recipients on each outgoing row, and `transaction()` returns
+  the same rows as activity and overview. Use `result.outputs` for individual
+  amounts, assets and public destinations. The aggregated `kind` remains
+  `sent` when any private payment goes to another wallet, including a
+  withdrawal's fee collector.
 
 - **What is public**: a deposit shows this account, the asset and the amount.
   A spend shows this account, the asset, each public output's recipient and

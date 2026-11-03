@@ -6613,9 +6613,10 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   /// The indexer does not say which spends were withdrawals: a spend whose
   /// outputs are all this wallet's own is listed as a withdrawal, one with
   /// another wallet's output as sent. Non-own private recipient tags are
-  /// included without extra registry or transaction reads. Block times are
-  /// filled from the RPC once per uncached slot, with bounded concurrency;
-  /// an unavailable timestamp stays `None` without failing the history read.
+  /// included without extra registry or transaction reads. Block times come
+  /// from the RPC for a bounded number of the newest uncached slots per
+  /// read, with bounded concurrency; an unavailable timestamp stays `None`,
+  /// is asked for again after a growing wait, and never fails the read.
   Future<List<ActivityEntry>> activity() =>
       RustLib.instance.api.zolanaMobileMobileWalletActivity(that: this);
 

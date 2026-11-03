@@ -10,7 +10,14 @@ use zolana_program::instruction::Transact;
 use zolana_transaction::{AssetRegistry, History, Mint, Utxo};
 
 use super::*;
-use crate::{ActivityKind, WalletConfig};
+use crate::{wallet::history::BlockTime, ActivityKind, WalletConfig};
+
+/// One asset's private payments and public withdrawals in a spend.
+type Leg<'a> = (
+    Mint,
+    &'a [(&'a MobileWallet, u64)],
+    &'a [(&'a MobileWallet, u64)],
+);
 
 fn config() -> WalletConfig {
     WalletConfig {
@@ -105,15 +112,24 @@ impl Fixture {
         assets: &[Mint],
         cached: bool,
     ) -> Self {
+        let legs: Vec<Leg> = assets
+            .iter()
+            .map(|asset| (*asset, private, withdrawals))
+            .collect();
+        Self::spend_legs(sender, &legs, cached)
+    }
+
+    /// One spend paying each leg's outputs in that leg's asset.
+    fn spend_legs(sender: &MobileWallet, legs: &[Leg], cached: bool) -> Self {
         let payer = sender.owner;
         let mut registry = AssetRegistry::default();
-        for mint in assets {
+        for (mint, _, _) in legs {
             if mint.asset != SOL_MINT {
                 registry.insert(mint.asset_id, mint.asset).unwrap();
             }
         }
         let mut notes = Vec::new();
-        for (index, asset) in assets.iter().enumerate() {
+        for (index, (asset, _, _)) in legs.iter().enumerate() {
             let utxo = Utxo {
                 owner: sender.address.signing_pubkey,
                 asset: *asset,
@@ -144,7 +160,7 @@ impl Fixture {
         }
         let mut transaction = ConfidentialTransaction::new(notes.clone(), payer).unwrap();
         let mut settlements = Vec::new();
-        for asset in assets {
+        for (asset, private, withdrawals) in legs {
             for &(recipient, amount) in private.iter().filter(|(_, amount)| *amount > 0) {
                 if asset.asset == SOL_MINT {
                     transaction
@@ -292,8 +308,9 @@ impl Fixture {
             ring_config: None,
             ring_program_id: None,
         };
-        let records = private
+        let records = legs
             .iter()
+            .flat_map(|(_, private, _)| private.iter())
             .map(|(recipient, _)| {
                 let record = zolana_user_registry_interface::UserRecord {
                     owner: recipient.owner,
@@ -622,22 +639,22 @@ fn activity_timestamps_follow_slots_rather_than_transaction_order() {
 }
 
 #[test]
-fn unavailable_activity_times_preserve_rows_and_are_retried() {
+fn unavailable_activity_times_preserve_rows_and_are_retried_after_a_growing_wait() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let signer = Keypair::new();
     let owner = identity(&signer);
     let recipient = identity(&Keypair::new());
     let fixture = Fixture::spend(&owner, &recipient, 20, 0, &[Mint::SOL]);
     let scan = fixture.scan(&owner);
-    for first in [
+    for miss in [
         json!({"result": null}),
         json!({"error": {"code": -32009, "message": "slot unavailable"}}),
     ] {
         let calls = AtomicUsize::new(0);
         let (reader, asked) = wallet(&signer, move |method, _| {
             assert_eq!(method, "getBlockTime");
-            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                first.clone()
+            if calls.fetch_add(1, Ordering::SeqCst) < 2 {
+                miss.clone()
             } else {
                 json!({"result": 1_800_000_000})
             }
@@ -646,10 +663,108 @@ fn unavailable_activity_times_preserve_rows_and_are_retried() {
         assert_eq!(entries[0].block_time, None);
         assert_eq!(entries[0].amount, 20);
         assert_eq!(entries[0].recipients, vec![recipient.owner.to_string()]);
+        // A miss is remembered: the next read does not ask again.
+        let entries = super::super::history::entries(&reader, &scan).unwrap();
+        assert_eq!(entries[0].block_time, None);
+        assert_eq!(asked.lock().unwrap().len(), 1);
+        let wait_after = |reader: &MobileWallet, misses: u32| {
+            let mut times = reader.block_times();
+            let Some(BlockTime::Missing { retry_at, wait }) = times.get_mut(&10) else {
+                panic!("the miss is cached");
+            };
+            assert_eq!(
+                *wait,
+                Duration::from_secs(30) * misses,
+                "after {misses} misses"
+            );
+            *retry_at = Instant::now();
+        };
+        // Once the wait is over, it asks again; another miss doubles the wait.
+        wait_after(&reader, 1);
+        let entries = super::super::history::entries(&reader, &scan).unwrap();
+        assert_eq!(entries[0].block_time, None);
+        assert_eq!(asked.lock().unwrap().len(), 2);
+        wait_after(&reader, 2);
         let entries = super::super::history::entries(&reader, &scan).unwrap();
         assert_eq!(entries[0].block_time, Some(1_800_000_000));
-        assert_eq!(asked.lock().unwrap().len(), 2);
+        assert_eq!(asked.lock().unwrap().len(), 3);
     }
+}
+
+#[test]
+fn activity_time_reads_are_bounded_per_call_newest_first() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let fixture = Fixture::spend(&owner, &recipient, 20, 0, &[Mint::SOL]);
+    let mut scan = fixture.scan(&owner);
+    let first = scan.history.transactions[0].clone();
+    scan.history.transactions = (1..=40)
+        .map(|slot| {
+            let mut tx = first.clone();
+            tx.slot = slot;
+            tx.tx_signature = Signature::from([slot as u8; 64]);
+            tx
+        })
+        .collect();
+    let (reader, asked) = wallet(&signer, |method, params| {
+        assert_eq!(method, "getBlockTime");
+        json!({"result": 1_800_000_000 + params[0].as_i64().unwrap()})
+    });
+    let entries = super::super::history::entries(&reader, &scan).unwrap();
+    assert_eq!(entries.len(), 40);
+    for entry in &entries {
+        let expected = (entry.slot > 8).then_some(1_800_000_000 + entry.slot as i64);
+        assert_eq!(entry.block_time, expected, "slot {}", entry.slot);
+    }
+    assert_eq!(asked.lock().unwrap().len(), 32, "newest slots first");
+    let entries = super::super::history::entries(&reader, &scan).unwrap();
+    assert!(entries.iter().all(|entry| entry.block_time.is_some()));
+    assert_eq!(asked.lock().unwrap().len(), 40, "the rest on a later read");
+}
+
+#[test]
+fn lookup_recipients_are_signature_wide_like_activity_for_mixed_asset_spends() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let public = identity(&Keypair::new());
+    let token = Mint::new(Pubkey::new_unique(), 7);
+    // A private token payment with a public SOL withdrawal in one spend.
+    let fixture = Fixture::spend_legs(
+        &owner,
+        &[
+            (Mint::SOL, &[], &[(&public, 30)]),
+            (token, &[(&recipient, 20)], &[]),
+        ],
+        false,
+    );
+    let scan = fixture.scan(&owner);
+    let mut expected = activity::entries(&scan.history, &scan.asset_registry).unwrap();
+    assert_eq!(expected.len(), 2);
+    for entry in &mut expected {
+        entry.block_time = Some(0);
+        assert_eq!(entry.recipients, vec![recipient.owner.to_string()]);
+    }
+    let signature = fixture.signature.to_string();
+    let (reader, _) = fixture.open(&signer);
+    let result = reader.transaction(signature).unwrap();
+    assert_eq!(result.status, Status::Ready);
+    assert_eq!(result.entries, expected, "the same rows from every read");
+    assert_eq!(result.outputs.len(), 2);
+}
+
+#[test]
+fn an_inconsistent_lookup_response_seeds_no_block_time() {
+    let signer = Keypair::new();
+    let owner = identity(&signer);
+    let recipient = identity(&Keypair::new());
+    let mut fixture = Fixture::spend(&owner, &recipient, 20, 0, &[Mint::SOL]);
+    fixture.events[0].slot = 11;
+    let signature = fixture.signature.to_string();
+    let (reader, _) = fixture.open(&signer);
+    assert!(reader.transaction(signature).is_err());
+    assert!(reader.block_times().is_empty());
 }
 
 #[test]

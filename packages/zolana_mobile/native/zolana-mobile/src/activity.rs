@@ -4,8 +4,11 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use solana_pubkey::Pubkey;
+use zolana_client::rpc::OutputSlot;
 use zolana_interface::event::OutputDataEncoding;
-use zolana_transaction::{AssetRegistry, EncryptedScheme, History, HistoryEntry, HistoryKind};
+use zolana_transaction::{
+    AssetRegistry, EncryptedScheme, History, HistoryEntry, HistoryKind, ShieldedTransaction,
+};
 
 use crate::{asset::mint_name, error::WalletError};
 
@@ -29,10 +32,10 @@ pub enum ActivityKind {
 /// left the private balance, change excluded; a self transfer's is what it
 /// spent.
 ///
-/// The optional block time is in Unix seconds. Outgoing recipients are sorted,
-/// unique private addresses: activity/overview use signature-wide tags, while
-/// transaction lookup uses verified outputs for this asset. See
-/// `TransactionLookup.outputs` for public destinations and individual amounts.
+/// The optional block time is in Unix seconds. Outgoing recipients are the
+/// sorted, unique private addresses the signature's non-own output tags name,
+/// the same from every read. See `TransactionLookup.outputs` for public
+/// destinations and individual amounts.
 /// The stable `index` is the pool's asset id (1 for SOL); together with
 /// `signature` and `slot`, it identifies the same asset row across reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,10 +51,10 @@ pub struct ActivityEntry {
     pub block_time: Option<i64>,
     /// Private recipient addresses from this signature's non-own output
     /// tags, sorted and deduplicated. Empty for incoming and self transfers.
-    /// In activity/overview, tags do not identify assets, so a multi-asset
-    /// signature repeats the same addresses on each outgoing row. Transaction
-    /// lookup scopes them to the row's asset using verified outputs. Public
-    /// recipients and per-output amounts are in `TransactionLookup.outputs`.
+    /// Tags do not identify assets, so a multi-asset signature repeats the
+    /// same addresses on each outgoing row, in activity, overview and
+    /// transaction lookup alike. Public recipients and per-output amounts
+    /// are in `TransactionLookup.outputs`.
     #[frb(default = "const []")]
     pub recipients: Vec<String>,
     /// Stable asset-row index: the pool's asset id (1 for SOL), not the row's
@@ -68,22 +71,13 @@ pub(crate) fn entries(
     let owned: HashSet<_> = history.utxos.iter().map(|note| note.utxo_hash).collect();
     let mut recipients = HashMap::<_, BTreeSet<_>>::new();
     for tx in &history.transactions {
-        // Ring discovery tags are not recipient Solana addresses.
-        if tx.ring_config.is_some() || tx.ring_program_id.is_some() {
-            continue;
-        }
-        for slot in &tx.output_slots {
-            if !history.view_tags.contains(&slot.view_tag)
-                && !owned.contains(&slot.output_context.hash)
-                && matches!(slot.output_data(), Some(OutputDataEncoding::Encrypted(blob))
-                    if blob.first() == Some(&EncryptedScheme::Confidential.as_byte()))
-            {
-                recipients
-                    .entry(tx.tx_signature)
-                    .or_default()
-                    .insert(Pubkey::new_from_array(slot.view_tag).to_string());
-            }
-        }
+        recipients
+            .entry(tx.tx_signature)
+            .or_default()
+            .extend(self::recipients(tx, |slot| {
+                history.view_tags.contains(&slot.view_tag)
+                    || owned.contains(&slot.output_context.hash)
+            }));
     }
     history
         .entries()
@@ -97,6 +91,25 @@ pub(crate) fn entries(
             Ok(entry)
         })
         .collect()
+}
+
+/// The private addresses `tx`'s output tags name, `own` outputs excluded:
+/// the one rule activity, overview and transaction lookup share. Ring
+/// discovery tags are not recipient Solana addresses.
+pub(crate) fn recipients<'a>(
+    tx: &'a ShieldedTransaction,
+    own: impl Fn(&OutputSlot) -> bool + 'a,
+) -> impl Iterator<Item = String> + 'a {
+    let ring = tx.ring_config.is_some() || tx.ring_program_id.is_some();
+    tx.output_slots
+        .iter()
+        .filter(move |slot| {
+            !ring
+                && !own(slot)
+                && matches!(slot.output_data(), Some(OutputDataEncoding::Encrypted(blob))
+                    if blob.first() == Some(&EncryptedScheme::Confidential.as_byte()))
+        })
+        .map(|slot| Pubkey::new_from_array(slot.view_tag).to_string())
 }
 
 pub(crate) fn activity_entry(
@@ -159,7 +172,7 @@ pub struct TransactionOutput {
 /// wallet results. Only `ready` may carry entries and outputs. Chain metadata
 /// may be available in other statuses too.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[flutter_rust_bridge::frb(non_opaque)]
+#[flutter_rust_bridge::frb(non_opaque, dart_metadata = ("freezed"))]
 pub struct TransactionLookup {
     pub status: TransactionLookupStatus,
     pub entries: Vec<ActivityEntry>,

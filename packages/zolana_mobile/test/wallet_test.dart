@@ -574,6 +574,40 @@ void main() {
     expect(withoutRecipients.recipients, isEmpty);
   });
 
+  test('transaction lookups compare rows and outputs by value', () {
+    TransactionLookup lookup() => TransactionLookup(
+      status: TransactionLookupStatus.ready,
+      entries: [
+        ActivityEntry(
+          kind: ActivityKind.sent,
+          amount: BigInt.from(20),
+          signature: 'signature',
+          slot: BigInt.from(10),
+          index: BigInt.one,
+          recipients: ['recipient'],
+        ),
+      ],
+      outputs: [
+        TransactionOutput(
+          recipient: 'recipient',
+          amount: BigInt.from(20),
+          isPublic: false,
+        ),
+      ],
+      fee: BigInt.from(5000),
+      indexedSlot: BigInt.from(90),
+    );
+    expect(lookup(), lookup());
+    expect(lookup().hashCode, lookup().hashCode);
+    expect(lookup().copyWith(outputs: const []), isNot(lookup()));
+    final withoutOutputs = TransactionLookup(
+      status: TransactionLookupStatus.notFound,
+      entries: const [],
+      indexedSlot: BigInt.zero,
+    );
+    expect(withoutOutputs.outputs, isEmpty);
+  });
+
   test(
     'signature lookup preserves rows, outputs, metadata and statuses',
     () async {

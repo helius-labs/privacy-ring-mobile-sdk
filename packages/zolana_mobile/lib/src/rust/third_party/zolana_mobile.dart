@@ -67,9 +67,10 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// The indexer does not say which spends were withdrawals: a spend whose
   /// outputs are all this wallet's own is listed as a withdrawal, one with
   /// another wallet's output as sent. Non-own private recipient tags are
-  /// included without extra registry or transaction reads. Block times are
-  /// filled from the RPC once per uncached slot, with bounded concurrency;
-  /// an unavailable timestamp stays `None` without failing the history read.
+  /// included without extra registry or transaction reads. Block times come
+  /// from the RPC for a bounded number of the newest uncached slots per
+  /// read, with bounded concurrency; an unavailable timestamp stays `None`,
+  /// is asked for again after a growing wait, and never fails the read.
   Future<List<ActivityEntry>> activity();
 
   /// Spendable private balances, read from the indexer now: one per asset
@@ -448,10 +449,10 @@ abstract class Transport implements RustOpaqueInterface {
 /// left the private balance, change excluded; a self transfer's is what it
 /// spent.
 ///
-/// The optional block time is in Unix seconds. Outgoing recipients are sorted,
-/// unique private addresses: activity/overview use signature-wide tags, while
-/// transaction lookup uses verified outputs for this asset. See
-/// `TransactionLookup.outputs` for public destinations and individual amounts.
+/// The optional block time is in Unix seconds. Outgoing recipients are the
+/// sorted, unique private addresses the signature's non-own output tags name,
+/// the same from every read. See `TransactionLookup.outputs` for public
+/// destinations and individual amounts.
 /// The stable `index` is the pool's asset id (1 for SOL); together with
 /// `signature` and `slot`, it identifies the same asset row across reads.
 @freezed
@@ -994,58 +995,17 @@ class TokenBalance {
 /// A signature-scoped read. Network failures throw; they are never empty
 /// wallet results. Only `ready` may carry entries and outputs. Chain metadata
 /// may be available in other statuses too.
-class TransactionLookup {
-  final TransactionLookupStatus status;
-  final List<ActivityEntry> entries;
-
-  /// Each outgoing private payment and public withdrawal, without merging
-  /// payments by recipient or asset. Empty for incoming and self transfers.
-  /// Private payments precede public withdrawals within each event.
-  final List<TransactionOutput> outputs;
-  final BigInt? slot;
-
-  /// Estimated block production time, in Unix seconds, from `getTransaction`.
-  final PlatformInt64? blockTime;
-
-  /// Whole Solana transaction network fee in lamports, from `meta.fee`,
-  /// including any priority fee. Not a privacy fee or an asset-row amount.
-  final BigInt? fee;
-
-  /// Highest slot the indexer had persisted for this lookup.
-  final BigInt indexedSlot;
-
-  const TransactionLookup({
-    required this.status,
-    required this.entries,
-    this.outputs = const [],
-    this.slot,
-    this.blockTime,
-    this.fee,
-    required this.indexedSlot,
-  });
-
-  @override
-  int get hashCode =>
-      status.hashCode ^
-      entries.hashCode ^
-      outputs.hashCode ^
-      slot.hashCode ^
-      blockTime.hashCode ^
-      fee.hashCode ^
-      indexedSlot.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is TransactionLookup &&
-          runtimeType == other.runtimeType &&
-          status == other.status &&
-          entries == other.entries &&
-          outputs == other.outputs &&
-          slot == other.slot &&
-          blockTime == other.blockTime &&
-          fee == other.fee &&
-          indexedSlot == other.indexedSlot;
+@freezed
+sealed class TransactionLookup with _$TransactionLookup {
+  const factory TransactionLookup({
+    required TransactionLookupStatus status,
+    required List<ActivityEntry> entries,
+    @Default([]) List<TransactionOutput> outputs,
+    BigInt? slot,
+    PlatformInt64? blockTime,
+    BigInt? fee,
+    required BigInt indexedSlot,
+  }) = _TransactionLookup;
 }
 
 /// Whether a signature has a complete wallet result at the indexed slot.

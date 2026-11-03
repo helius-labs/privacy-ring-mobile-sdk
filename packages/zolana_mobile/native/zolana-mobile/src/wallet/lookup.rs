@@ -55,9 +55,6 @@ pub(super) fn transaction(
         .as_ref()
         .and_then(|tx| tx.transaction.meta.as_ref())
         .map(|meta| meta.fee);
-    if let (Some(slot), Some(time)) = (slot, block_time) {
-        wallet.block_times().insert(slot, time);
-    }
     for event in indexed.transactions {
         let tx = event.transaction;
         if tx.tx_signature != signature
@@ -68,21 +65,15 @@ pub(super) fn transaction(
         }
         transactions.push(tx);
     }
+    // Seed the shared cache only with a slot the indexed events agree on.
+    if let (Some(slot), Some(time)) = (slot, block_time) {
+        wallet
+            .block_times()
+            .insert(slot, history::BlockTime::Known(time));
+    }
     let result = |status, mut entries: Vec<ActivityEntry>, outputs: Vec<TransactionOutput>| {
         for entry in &mut entries {
             entry.block_time = block_time;
-            if matches!(
-                entry.kind,
-                activity::ActivityKind::Sent | activity::ActivityKind::Withdrawal
-            ) {
-                entry.recipients = outputs
-                    .iter()
-                    .filter(|output| !output.is_public && output.mint == entry.mint)
-                    .map(|output| output.recipient.clone())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-            }
         }
         TransactionLookup {
             status,
@@ -417,6 +408,18 @@ impl MobileWallet {
                 movements.entry(mint).or_default().spent += spent as u128;
             }
         }
+        // The same signature-wide rule as activity and overview, so the
+        // same row reads equal from every path.
+        let recipients: Vec<_> = transactions
+            .iter()
+            .flat_map(|tx| {
+                activity::recipients(tx, |slot| {
+                    tags.contains(&slot.view_tag) || by_hash.contains_key(&slot.output_context.hash)
+                })
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         let mut entries = Vec::new();
         for (mint, movement) in movements {
             let (received, spent) = (movement.received, movement.spent);
@@ -448,7 +451,7 @@ impl MobileWallet {
             }
             let amount = u64::try_from(amount)
                 .map_err(|_| ClientError::Rpc("activity amount exceeds u64".into()))?;
-            entries.push(activity::activity_entry(
+            let mut entry = activity::activity_entry(
                 HistoryEntry {
                     kind,
                     mint,
@@ -457,7 +460,11 @@ impl MobileWallet {
                     slot: transactions[0].slot,
                 },
                 assets,
-            )?);
+            )?;
+            if matches!(kind, HistoryKind::Sent | HistoryKind::Withdrawal) {
+                entry.recipients = recipients.clone();
+            }
+            entries.push(entry);
         }
         Ok(Details::Complete(entries, outputs))
     }
