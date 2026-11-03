@@ -311,12 +311,14 @@ void main() {
       transport.sent.where((r) => r.startsWith('POST ') && _isProof(r)),
       hasLength(1),
     );
-    // The prover attests before it gets the encrypted request; nothing else
-    // is fetched, no proving key among it.
-    expect(transport.sent, contains('GET /attestation'));
+    // The wallet fetches the signed devnet policy and the prover attests
+    // before it gets the encrypted request; nothing else is fetched, no
+    // proving key among it.
+    const fetched = {'GET /attestation', 'GET /tee-policy/devnet.json'};
+    expect(transport.sent, containsAll(fetched));
     expect(
       transport.sent.where(
-        (r) => r.startsWith('GET ') && !_isProof(r) && r != 'GET /attestation',
+        (r) => r.startsWith('GET ') && !_isProof(r) && !fetched.contains(r),
       ),
       isEmpty,
     );
