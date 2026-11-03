@@ -7,14 +7,15 @@ zopro, a Groth16 prover in Rust for gnark's keys (on the GPU where there is
 one), or through the application's backend with the proof verified on the
 device. The Solana key stays with the application's signer.
 
-This draft requires the coordinated ceremony-key rollout in
-[Zolana #525](https://github.com/helius-labs/zolana/pull/525) before SDK publication.
+Targets the finalized ceremony keys and signed-policy protocol in
+[Zolana #521](https://github.com/helius-labs/zolana/pull/521).
 
-Pins Zolana commit `3b022ff2fd81c18786caa79fb4754437c6056537` and shielded-pool program
+Pins Zolana commit `c4062d3860965855e47268f61b01a27e774096eb` and shielded-pool program
 `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply indexer and
 remote prover URLs with a reviewed TEE policy.
-Remote configuration without `proverTeePolicy` fails before HTTP. Deployment
-presets and policies live in the example app, independently of the native SDK.
+Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
+or a reviewed static `proverTeePolicy`. Missing policy fails before HTTP.
+Deployment endpoints are configured by the application.
 See [SDK configuration](packages/zolana_mobile/README.md). Earlier programs'
 notes and pending transactions require their matching SDK and deployment.
 
@@ -147,7 +148,7 @@ pool:
 ZOLANA_E2E_RPC_URL="https://beta-devnet.helius-rpc.com/?api-key=$API_KEY" \
 ZOLANA_E2E_INDEXER_URL="https://d34xe1hqb2ibg2.cloudfront.net" \
 ZOLANA_E2E_PROVER_URL="https://dd73hh473h6ha.cloudfront.net" \
-ZOLANA_E2E_TEE_POLICY=packages/zolana_mobile/example/assets/policies/devnet.json \
+ZOLANA_E2E_TEE_NETWORK=devnet \
 ZOLANA_E2E_SENDER_SEED=a0a60f24c56c18101be405cc2ddb750d88961c1ee781bd17cd174fe1f5ff55dd \
 ZOLANA_E2E_RECIPIENT_SEED=7138835c906af341f4eec548684b5204d5b617b19573a0dd758050982601bb67 \
 ZOLANA_E2E_MINT=Y8FDajuDMQWu7d5ES3jbZ67NzZta266WuFgQ92N4yd6 \

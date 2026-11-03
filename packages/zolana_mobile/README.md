@@ -5,36 +5,37 @@ Groth16 prover in Rust for gnark's proving keys, on the GPU where there is
 one. Android and iOS are supported. The package contains its Rust sources; it
 does not require a sibling Zolana checkout.
 
-This SDK pins Zolana source `3b022ff2fd81c18786caa79fb4754437c6056537`
-([#525](https://github.com/helius-labs/zolana/pull/525)) and shielded-pool program
-`ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply deployment
-configuration independently of the SDK:
+This SDK pins Zolana source `c4062d3860965855e47268f61b01a27e774096eb`
+([#521](https://github.com/helius-labs/zolana/pull/521), SDK 0.8.0-alpha) and
+shielded-pool program `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`.
+Applications select the deployment explicitly:
 
 ```dart
 final config = WalletConfig(
   rpcUrl: solanaRpcUrl,
   indexerUrl: indexerUrl,
   proverUrl: proverUrl,
-  proverTeePolicy: reviewedPolicyJson,
+  proverTeeNetwork: ProverTeeNetwork.devnet, // or mainnet
   provingKeyDir: '/persistent/private/proving-keys',
 );
 ```
 
-Remote URLs require a supplied policy; `requireProverTee: true` requires one for
-loopback proxies too. Missing policy raises `WalletError.proverPolicyMissing`
-before HTTP. The URL never selects a policy, and there is no devnet fallback.
-`Deployment.devnet()` and `Deployment.mainnet()` have been removed; migrate
-presets into application configuration. Complete reviewed policy files, including
-HPKE public-key pins, live under the example's `assets/policies/`. Bundle and
-checksum-pin the chosen file independently of the SDK release. Never learn trust
-pins from the prover being verified. Local proving needs no TEE policy.
+The Rust SDK downloads the network's signed policy, verifies it with its pinned
+signing keys, and checks network, version and expiry. It refreshes the policy
+with attestation and re-attests once after an enclave key rotation. URLs never
+select a policy. Custom deployments may supply a complete reviewed static policy
+as `proverTeePolicy` instead; setting both fields is rejected. Applications must
+keep static policies current themselves. Never learn trust pins from the prover
+being verified. Missing policy raises `WalletError.proverPolicyMissing` before
+HTTP for remote URLs; `requireProverTee: true` enforces this for loopback too.
+Local proving needs no policy.
 
-Earlier programs' notes, caches and pending transactions cannot be migrated by
-changing URLs. Reconcile them using their matching SDK and deployment before
-upgrading. Prepared snapshots now use version 2 and a new authentication domain;
-old snapshots are rejected. Transfer and merge proving-key hashes are unchanged,
-so the verified local key cache can be reused. The public-seed Flutter example
-continues to use devnet-e; use your own signer for mainnet.
+This upgrade keeps program IDs, notes and snapshot version 2 unchanged. The
+finalized ceremony keys replace older transfer and merge keys; the key store
+invalidates old keys, and proofs prepared with old keys must be rebuilt before
+submission. Earlier program IDs still require their matching SDK and deployment
+for recovery. The public-seed Flutter example remains devnet-only; supply your
+own signer and mainnet endpoints when selecting `ProverTeeNetwork.mainnet`.
 
 **Performance.** The native prover at four threads on an Apple M5 Pro proves a warm spend (key loaded) in 0.17 s for one note to two outputs, 0.27 s for two, 0.55 s for four, 0.92 s for eight, 1.7 s for sixteen and 2.7 s for twenty-four; a restart adds the key's load from its mapped image (tens of milliseconds there), and the first run its download (9 MB to 180 MB). On phones, in release builds, one note proves in 0.18 s on a Samsung Galaxy S25, 0.21 s on an iPhone 17 Pro, 0.30 s to 0.35 s on an iPhone 15, an iPhone 12 and a Galaxy A56, and 1.2 s on a Galaxy A16; eight notes in 1.2 s to 2.0 s, 7.0 s on the A16; twenty-four in 3.6 s to 5.9 s, 25 s on the A16. A key loads from its image in under 0.3 s, up to 0.74 s on the A16. CI benches release builds on these six phones for every pull request and keeps the history of `main` on the [`proof-timing`](https://github.com/helius-labs/zolana-mobile-sdk/tree/proof-timing) branch; "Proof timing" below describes the harness.
 
@@ -659,7 +660,7 @@ payment; it rechecks cache validity but cannot renew its expiry or proof roots.
 The [runnable proxy/relayer example](example/backend/README.md) includes
 `x-sf-auth`, synchronous and queued TEE merge routes, persistent run recovery and a Flutter entry
 point (`example/lib/main_sponsored.dart`). Both use upstream
-`3b022ff2fd81c18786caa79fb4754437c6056537` and the artifacts in
+`c4062d3860965855e47268f61b01a27e774096eb` and the artifacts in
 this checkout. These mobile APIs are unreleased; e30b328a does not expose them.
 See the example for migration boundaries, trusted TEE policy configuration and
 the production responsibilities it intentionally leaves to the client backend.
@@ -700,27 +701,27 @@ await wallet.spend(
   completes or fails. Set `WalletConfig.proverSyncOnly: true` when the backend
   supports synchronous responses only; queued or asynchronous fallbacks then
   fail without sending a status-polling request.
-  The Helius gateway (`https://*.helius-rpc.com/v1/zolana`) routes proofs
+  The Helius gateway (`https://*.helius-rpc.com/v1/spr`) routes proofs
   by their body, so for it the paths are `/prove` and `/prove/status`.
 - **Attestation**: from every prover but a loopback one, the Helius gateway
   included, the wallet first fetches
-  `GET <proverUrl>/tee/v1/attestation?nonce=<hex>`, checks that the prover
+  `GET <proverUrl>/attestation?nonce=<hex>`, checks that the prover
   matches the application's supplied policy, and encrypts every
-  request body to it, with `Zolana-Tee` and `Zolana-Tee-Enc` headers.
+  request body to it, with `Spr-Tee` and `Spr-Tee-Enc` headers.
   POST ciphertext is in the octet-stream body; encrypted GET uses the
-  `Zolana-Tee-Ciphertext` header. Each request is bound to its method and
+  `Spr-Tee-Ciphertext` header. Each request is bound to its method and
   its route below `proverUrl`. A remote prover that does not attest fails
   every remote spend: no setting sends it plaintext. Set
   `requireProverTee: true` to enforce this for a localhost proxy too.
-  `proverTeePolicy` is required for remote URLs and forced loopback attestation.
-  It takes trusted `TeePolicy` JSON or a deployment pin file; no policy is selected
-  automatically. Distribute that policy
-  through the application's trusted configuration, never from the prover being
-  verified. Verification checks vendor evidence, freshness, nonce/key binding
+  Select `proverTeeNetwork` for an SDK-pinned signed policy, or supply
+  `proverTeePolicy` for a custom deployment. Signed policies refresh automatically
+  and fail closed on invalid signatures, expiry or rollback. Static policies
+  must be updated through trusted application configuration, never by the prover
+  being  verified. Verification checks vendor evidence, freshness, nonce/key binding
   and the policy's deployment measurements and key/GPU constraints.
 - **The application's backend** serves these routes, the attestation
   included, as a proxy of an attested Zolana prover: it forwards the body
-  and the `X-Sync` / `X-Async` and `Zolana-Tee*` headers to the same route
+  and the `X-Sync` / `X-Async` and `Spr-Tee*` headers to the same route
   of the prover, and returns the prover's status, headers and body as they
   are. The response carries the proof's `provingKeySha256`, which the
   wallet checks. A Zolana prover that serves these routes can also be
@@ -1105,7 +1106,8 @@ nowhere.
 
 `WalletConfig.provingKeyCatalog` accepts the JSON contents of the
 `/proving-keys` catalog (`keys[].artifacts[]`). Supply it from app configuration
-or fetch it separately. The SDK makes no automatic catalog or policy request.
+or fetch it separately. The SDK does not fetch catalogs automatically. Selecting `proverTeeNetwork`
+enables signed-policy downloads.
 This option and `provingKeyUrl` are mutually exclusive.
 
 The gnark source digest and zopro checksum and size must match the bundled pins.

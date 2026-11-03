@@ -17,6 +17,13 @@ use zolana_client::{ProverClient, SolanaRpc, ZolanaIndexer};
 
 use crate::error::WalletError;
 
+/// Select the network's signed prover policy and its SDK-pinned signers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProverTeeNetwork {
+    Mainnet,
+    Devnet,
+}
+
 /// One HTTP request of the wallet.
 pub struct TransportRequest {
     /// `POST` for Solana RPC and indexer calls and proof requests, `GET` for
@@ -140,8 +147,14 @@ impl Transport {
         url: String,
         require_tee: bool,
         policy_json: Option<&str>,
+        network: Option<ProverTeeNetwork>,
         sync_only: bool,
     ) -> Result<ProverClient, WalletError> {
+        if policy_json.is_some() && network.is_some() {
+            return Err(WalletError::Client {
+                message: "choose proverTeeNetwork or proverTeePolicy, not both".into(),
+            });
+        }
         let mut client = ProverClient::with_client(
             url,
             ProverSender {
@@ -149,7 +162,14 @@ impl Transport {
                 sync_only,
             },
         );
-        if require_tee || policy_json.is_some() || client.has_tee() {
+        if let Some(network) = network {
+            use zolana_client::prover::tee::{SignedTeePolicy, TeeNetwork};
+            let network = match network {
+                ProverTeeNetwork::Mainnet => TeeNetwork::Mainnet,
+                ProverTeeNetwork::Devnet => TeeNetwork::Devnet,
+            };
+            client = client.with_signed_tee(SignedTeePolicy::for_network(network));
+        } else if require_tee || policy_json.is_some() || client.has_tee() {
             use zolana_client::prover::tee::TeePolicy;
             let json = policy_json.ok_or(WalletError::ProverPolicyMissing)?;
             let policy = TeePolicy::from_file_json(json).map_err(|error| WalletError::Client {
@@ -365,7 +385,7 @@ pub(crate) mod tests {
     }
 
     const RPC_URL: &str = "https://rpc.example/?api-key=secret";
-    const INDEXER_URL: &str = "https://indexer.example/v1/zolana?api-key=secret";
+    const INDEXER_URL: &str = "https://indexer.example/v1/spr?api-key=secret";
 
     fn open(signer: &Keypair, transport: Transport) -> MobileWallet {
         let config = WalletConfig {
@@ -378,6 +398,7 @@ pub(crate) mod tests {
             prover_url: None,
             require_prover_tee: None,
             prover_tee_policy: None,
+            prover_tee_network: None,
             prover_sync_only: None,
             max_spend_inputs: None,
             reuse_notes_ms: None,
@@ -436,7 +457,7 @@ pub(crate) mod tests {
             assert_eq!(request.method, "POST");
             assert_eq!(
                 request.url,
-                format!("https://indexer.example/v1/zolana/{method}?api-key=secret")
+                format!("https://indexer.example/v1/spr/{method}?api-key=secret")
             );
             assert_eq!(request.headers, json_content_type());
         }
@@ -598,20 +619,71 @@ mod proxy_tests {
     use super::*;
     use zolana_client::prover::{ExpectedProvingKey, ProveRequest};
     use zolana_client::{prover::Delivery, Prover};
-    const POLICY: &str = include_str!("../../../example/assets/policies/devnet.json");
+    const POLICY: &str = include_str!("../tests/fixtures/tee-policy.json");
+
+    #[test]
+    fn signed_policy_uses_the_selected_network_without_proxy_credentials() {
+        for (network, name) in [
+            (ProverTeeNetwork::Mainnet, "mainnet"),
+            (ProverTeeNetwork::Devnet, "devnet"),
+        ] {
+            let (transport, requests) = tests::fake(|_| {
+                Ok(TransportResponse {
+                    status: 200,
+                    headers: HashMap::new(),
+                    body: POLICY.as_bytes().to_vec(),
+                })
+            });
+            let prover = transport
+                .configured_prover(
+                    "https://proxy.example/v1/spr?api-key=secret".into(),
+                    true,
+                    None,
+                    Some(network),
+                    false,
+                )
+                .unwrap();
+            assert!(prover.has_tee());
+            // An unsigned policy must fail before attestation or a proof request.
+            assert!(prover.prove(&Merge).is_err());
+            let requests = requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "GET");
+            assert_eq!(
+                requests[0].url,
+                format!("https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/{name}.json")
+            );
+            assert!(requests[0].body.is_empty());
+        }
+    }
+
+    #[test]
+    fn conflicting_policies_fail_before_http() {
+        let (transport, requests) = tests::fake(|_| panic!("conflicting policies sent HTTP"));
+        assert!(transport
+            .configured_prover(
+                "https://proxy.example/v1/spr".into(),
+                true,
+                Some(POLICY),
+                Some(ProverTeeNetwork::Devnet),
+                false,
+            )
+            .is_err());
+        assert!(requests.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn a_missing_policy_fails_before_any_http() {
         for url in [
             "https://dd73hh473h6ha.cloudfront.net",
             "https://d3ky2kt0ntqxt1.cloudfront.net",
-            "https://api.example/v1/zolana?api-key=secret",
+            "https://api.example/v1/spr?api-key=secret",
             "https://proxy.example/zolana",
-            "http://localhost:1234/v1/zolana",
+            "http://localhost:1234/v1/spr",
         ] {
             let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
             assert!(matches!(
-                transport.configured_prover(url.into(), true, None, false),
+                transport.configured_prover(url.into(), true, None, None, false),
                 Err(WalletError::ProverPolicyMissing)
             ));
             assert!(requests.lock().unwrap().is_empty());
@@ -619,7 +691,7 @@ mod proxy_tests {
         // false only exempts loopback; it never permits an unpinned remote.
         let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
         assert!(matches!(
-            transport.configured_prover("https://prover.example".into(), false, None, false),
+            transport.configured_prover("https://prover.example".into(), false, None, None, false),
             Err(WalletError::ProverPolicyMissing)
         ));
         assert!(requests.lock().unwrap().is_empty());
@@ -629,9 +701,9 @@ mod proxy_tests {
     fn supplied_policy_attests_through_direct_unified_and_proxy_urls() {
         for url in [
             "https://prover.example",
-            "https://api.example/v1/zolana?api-key=secret",
+            "https://api.example/v1/spr?api-key=secret",
             "https://proxy.example/zolana",
-            "http://localhost:1234/v1/zolana",
+            "http://localhost:1234/v1/spr",
         ] {
             let (transport, requests) = tests::fake(|_| {
                 Ok(TransportResponse {
@@ -641,7 +713,7 @@ mod proxy_tests {
                 })
             });
             let prover = transport
-                .configured_prover(url.into(), false, Some(POLICY), false)
+                .configured_prover(url.into(), false, Some(POLICY), None, false)
                 .unwrap();
             assert!(prover.prove(&Merge).is_err());
             let requests = requests.lock().unwrap();
@@ -651,7 +723,7 @@ mod proxy_tests {
             assert_eq!(sent.origin(), base.origin());
             assert_eq!(
                 sent.path(),
-                format!("{}/tee/v1/attestation", base.path().trim_end_matches('/'))
+                format!("{}/attestation", base.path().trim_end_matches('/'))
             );
             assert_eq!(
                 sent.query_pairs().find(|(key, _)| key == "api-key"),
@@ -666,7 +738,13 @@ mod proxy_tests {
         let (transport, requests) = tests::fake(|_| panic!("bad policy sent HTTP"));
         for policy in ["{}", "null", r#"{"deployment":null}"#] {
             assert!(transport
-                .configured_prover("https://prover.example".into(), false, Some(policy), false)
+                .configured_prover(
+                    "https://prover.example".into(),
+                    false,
+                    Some(policy),
+                    None,
+                    false
+                )
                 .is_err());
         }
         assert!(requests.lock().unwrap().is_empty());
@@ -697,13 +775,19 @@ mod proxy_tests {
                 })
             });
             let client = transport
-                .configured_prover("http://localhost:1234/v1/zolana".into(), false, None, true)
+                .configured_prover(
+                    "http://localhost:1234/v1/spr".into(),
+                    false,
+                    None,
+                    None,
+                    true,
+                )
                 .unwrap();
             assert!(client.prove(&Merge).is_err());
             let requests = requests.lock().unwrap();
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].method, "POST");
-            assert!(requests[0].url.ends_with("/v1/zolana/prove/merge_8_1"));
+            assert!(requests[0].url.ends_with("/v1/spr/prove/merge_8_1"));
         }
     }
     #[test]
@@ -717,9 +801,10 @@ mod proxy_tests {
         });
         let client = transport
             .configured_prover(
-                "http://localhost:1234/v1/zolana".into(),
+                "http://localhost:1234/v1/spr".into(),
                 true,
                 Some(POLICY),
+                None,
                 true,
             )
             .unwrap();
@@ -727,6 +812,6 @@ mod proxy_tests {
         assert!(client.prove(&Merge).is_err());
         let requests = requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
-        assert!(requests[0].url.contains("/tee/v1/attestation?nonce="));
+        assert!(requests[0].url.contains("/attestation?nonce="));
     }
 }

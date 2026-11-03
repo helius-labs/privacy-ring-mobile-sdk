@@ -90,7 +90,8 @@ void main() {
               '${(await getApplicationSupportDirectory()).path}/proving-keys',
           proverUrl: backend.proverUrl,
           requireProverTee: true,
-          proverTeePolicy: await demoProverPolicy(),
+          proverTeePolicy: demoProverPolicy,
+          proverTeeNetwork: demoProverNetwork,
           mints: [for (final asset in demoAssets) ?asset.config],
         );
         Future<ZolanaWallet> open() => ZolanaWallet.open(

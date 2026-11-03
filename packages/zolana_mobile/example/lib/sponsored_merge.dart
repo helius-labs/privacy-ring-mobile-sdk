@@ -37,7 +37,7 @@ class SponsoredBackend {
   final _direct = HttpTransport();
   final HttpTransport _proxy;
 
-  String get proverUrl => base.resolve('v1/zolana').toString();
+  String get proverUrl => base.resolve('v1/spr').toString();
 
   Future<TransportResponse> transport(TransportRequest request) {
     final uri = Uri.parse(request.url);

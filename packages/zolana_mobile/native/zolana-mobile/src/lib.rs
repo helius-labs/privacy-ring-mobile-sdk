@@ -31,7 +31,8 @@ pub use error::WalletError;
 pub use keys::{ProvingKeyProgress, ProvingKeyStatus, ProvingKeys, DEFAULT_PROVING_KEYS_URL};
 pub use prover::Proving;
 pub use transport::{
-    Transport, TransportFailure, TransportOutcome, TransportRequest, TransportResponse,
+    ProverTeeNetwork, Transport, TransportFailure, TransportOutcome, TransportRequest,
+    TransportResponse,
 };
 pub use wallet::{
     derivation_message, CacheTarget, CachedOutput, MobileWallet, Operation, Output, OutputOpening,

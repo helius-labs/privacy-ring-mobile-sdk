@@ -105,10 +105,13 @@ pub struct WalletConfig {
     pub prover_url: Option<String>,
     /// Require attestation even for a loopback proxy. Remote URLs always attest.
     pub require_prover_tee: Option<bool>,
-    /// Trusted deployment policy JSON, supplied by the app, never by the prover.
-    /// Required for remote URLs and when require_prover_tee is true. Missing
-    /// policy fails before HTTP; no URL selects a policy automatically.
+    /// Trusted static policy JSON. Mutually exclusive with prover_tee_network.
+    /// Remote proving requires one of these policy options, even through a proxy.
     pub prover_tee_policy: Option<String>,
+    /// Fetch and verify the network's signed policy using the SDK's pinned
+    /// signers. The Rust client owns policy refresh, expiry and re-attestation.
+    /// Selection is explicit and independent of the prover URL.
+    pub prover_tee_network: Option<crate::ProverTeeNetwork>,
     /// Refuse queue fallback and status polling for remote proofs.
     pub prover_sync_only: Option<bool>,
     /// The most notes a spend takes on the device, 1 to 40; 40 when `None`.
@@ -705,6 +708,7 @@ impl MobileWallet {
                             url,
                             config.require_prover_tee.unwrap_or(false),
                             config.prover_tee_policy.as_deref(),
+                            config.prover_tee_network,
                             config.prover_sync_only.unwrap_or(false),
                         )
                         .map(Arc::new)
@@ -2057,7 +2061,7 @@ mod tests {
     pub(super) fn config() -> WalletConfig {
         WalletConfig {
             rpc_url: "https://rpc.example".to_string(),
-            indexer_url: "https://indexer.example/v1/zolana".to_string(),
+            indexer_url: "https://indexer.example/v1/spr".to_string(),
             proving_key_dir: std::env::temp_dir().display().to_string(),
             proving_key_url: None,
             proving_key_catalog: None,
@@ -2065,6 +2069,7 @@ mod tests {
             prover_url: None,
             require_prover_tee: None,
             prover_tee_policy: None,
+            prover_tee_network: None,
             prover_sync_only: None,
             max_spend_inputs: None,
             reuse_notes_ms: None,
@@ -3004,7 +3009,7 @@ mod tests {
     fn errors_mask_api_keys_in_urls() {
         let config = WalletConfig {
             rpc_url: "https://rpc.example/?api-key=secret".to_string(),
-            indexer_url: "https://indexer.example/v1/zolana?api-key=secret".to_string(),
+            indexer_url: "https://indexer.example/v1/spr?api-key=secret".to_string(),
             ..config()
         };
         let mut wallet = open_with(&Keypair::new(), config).unwrap();
@@ -3250,7 +3255,7 @@ mod tests {
             proving: Some(Proving::Remote),
             prover_url: prover_url.map(str::to_string),
             prover_tee_policy: prover_url
-                .map(|_| include_str!("../../../example/assets/policies/devnet.json").to_string()),
+                .map(|_| include_str!("../tests/fixtures/tee-policy.json").to_string()),
             ..config()
         };
         let mut remote = open_with(&signer, config(None)).unwrap();
@@ -3274,10 +3279,10 @@ mod tests {
             let wallet = open_with(&signer, config).unwrap();
             wallet.remote_prover.as_ref().unwrap().has_tee()
         };
-        let policy = Some(include_str!("../../../example/assets/policies/devnet.json"));
+        let policy = Some(include_str!("../tests/fixtures/tee-policy.json"));
         assert!(tee("https://prover.example", policy));
         assert!(tee(
-            "https://beta-devnet.helius-rpc.com/v1/zolana?api-key=k",
+            "https://beta-devnet.helius-rpc.com/v1/spr?api-key=k",
             policy
         ));
         assert!(!tee("http://127.0.0.1:3001", None));

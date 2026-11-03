@@ -2976,6 +2976,7 @@ const _: fn() = || {
         let _: Option<String> = WalletConfig.prover_url;
         let _: Option<bool> = WalletConfig.require_prover_tee;
         let _: Option<String> = WalletConfig.prover_tee_policy;
+        let _: Option<zolana_mobile::ProverTeeNetwork> = WalletConfig.prover_tee_network;
         let _: Option<bool> = WalletConfig.prover_sync_only;
         let _: Option<u32> = WalletConfig.max_spend_inputs;
         let _: Option<u64> = WalletConfig.reuse_notes_ms;
@@ -3774,6 +3775,17 @@ impl SseDecode for Option<bool> {
     }
 }
 
+impl SseDecode for Option<zolana_mobile::ProverTeeNetwork> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<zolana_mobile::ProverTeeNetwork>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<zolana_mobile::Proving> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3940,6 +3952,18 @@ impl SseDecode for zolana_mobile::ProvedRequest {
             prove_ms: var_proveMs,
             verify_ms: var_verifyMs,
             total_ms: var_totalMs,
+        };
+    }
+}
+
+impl SseDecode for zolana_mobile::ProverTeeNetwork {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zolana_mobile::ProverTeeNetwork::Mainnet,
+            1 => zolana_mobile::ProverTeeNetwork::Devnet,
+            _ => unreachable!("Invalid variant for ProverTeeNetwork: {}", inner),
         };
     }
 }
@@ -4198,6 +4222,8 @@ impl SseDecode for zolana_mobile::WalletConfig {
         let mut var_proverUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_requireProverTee = <Option<bool>>::sse_decode(deserializer);
         let mut var_proverTeePolicy = <Option<String>>::sse_decode(deserializer);
+        let mut var_proverTeeNetwork =
+            <Option<zolana_mobile::ProverTeeNetwork>>::sse_decode(deserializer);
         let mut var_proverSyncOnly = <Option<bool>>::sse_decode(deserializer);
         let mut var_maxSpendInputs = <Option<u32>>::sse_decode(deserializer);
         let mut var_reuseNotesMs = <Option<u64>>::sse_decode(deserializer);
@@ -4213,6 +4239,7 @@ impl SseDecode for zolana_mobile::WalletConfig {
             prover_url: var_proverUrl,
             require_prover_tee: var_requireProverTee,
             prover_tee_policy: var_proverTeePolicy,
+            prover_tee_network: var_proverTeeNetwork,
             prover_sync_only: var_proverSyncOnly,
             max_spend_inputs: var_maxSpendInputs,
             reuse_notes_ms: var_reuseNotesMs,
@@ -5041,6 +5068,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zolana_mobile::ProvedRequest>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::ProverTeeNetwork> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zolana_mobile::ProverTeeNetwork::Mainnet => 0.into_dart(),
+            zolana_mobile::ProverTeeNetwork::Devnet => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zolana_mobile::ProverTeeNetwork>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zolana_mobile::ProverTeeNetwork>>
+    for zolana_mobile::ProverTeeNetwork
+{
+    fn into_into_dart(self) -> FrbWrapper<zolana_mobile::ProverTeeNetwork> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::Proving> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -5346,6 +5394,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zolana_mobile::WalletConfig> {
             self.0.prover_url.into_into_dart().into_dart(),
             self.0.require_prover_tee.into_into_dart().into_dart(),
             self.0.prover_tee_policy.into_into_dart().into_dart(),
+            self.0.prover_tee_network.into_into_dart().into_dart(),
             self.0.prover_sync_only.into_into_dart().into_dart(),
             self.0.max_spend_inputs.into_into_dart().into_dart(),
             self.0.reuse_notes_ms.into_into_dart().into_dart(),
@@ -6051,6 +6100,16 @@ impl SseEncode for Option<bool> {
     }
 }
 
+impl SseEncode for Option<zolana_mobile::ProverTeeNetwork> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <zolana_mobile::ProverTeeNetwork>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<zolana_mobile::Proving> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6180,6 +6239,22 @@ impl SseEncode for zolana_mobile::ProvedRequest {
         <u64>::sse_encode(self.prove_ms, serializer);
         <u64>::sse_encode(self.verify_ms, serializer);
         <u64>::sse_encode(self.total_ms, serializer);
+    }
+}
+
+impl SseEncode for zolana_mobile::ProverTeeNetwork {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zolana_mobile::ProverTeeNetwork::Mainnet => 0,
+                zolana_mobile::ProverTeeNetwork::Devnet => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -6394,6 +6469,7 @@ impl SseEncode for zolana_mobile::WalletConfig {
         <Option<String>>::sse_encode(self.prover_url, serializer);
         <Option<bool>>::sse_encode(self.require_prover_tee, serializer);
         <Option<String>>::sse_encode(self.prover_tee_policy, serializer);
+        <Option<zolana_mobile::ProverTeeNetwork>>::sse_encode(self.prover_tee_network, serializer);
         <Option<bool>>::sse_encode(self.prover_sync_only, serializer);
         <Option<u32>>::sse_encode(self.max_spend_inputs, serializer);
         <Option<u64>>::sse_encode(self.reuse_notes_ms, serializer);

@@ -294,10 +294,10 @@ mod tests {
     /// A proof of [`REQUEST`] with the pinned key, as a prover returns it.
     const RESPONSE: &[u8] = include_bytes!("../../../../../fixtures/prove-response-2x2.json");
     /// A loopback prover, the one kind the SDK sends plaintext requests to.
-    const PROVER_URL: &str = "http://prover.localhost/v1/zolana?api-key=secret";
+    const PROVER_URL: &str = "http://prover.localhost/v1/spr?api-key=secret";
     const PROVE_URL: &str =
-        "http://prover.localhost/v1/zolana/prove/transfer_confidential_2_2?api-key=secret";
-    const STATUS_URL: &str = "http://prover.localhost/v1/zolana/prove/transfer_confidential_2_2/status?api-key=secret&jobId=job-1";
+        "http://prover.localhost/v1/spr/prove/transfer_confidential_2_2?api-key=secret";
+    const STATUS_URL: &str = "http://prover.localhost/v1/spr/prove/transfer_confidential_2_2/status?api-key=secret&jobId=job-1";
 
     /// The SDK's prover client of [`PROVER_URL`], through a transport that
     /// answers each request with `answer`.
@@ -310,7 +310,7 @@ mod tests {
         let (transport, requests) = fake(answer);
         (
             transport
-                .configured_prover(PROVER_URL.to_string(), false, None, false)
+                .configured_prover(PROVER_URL.to_string(), false, None, None, false)
                 .unwrap(),
             requests,
         )

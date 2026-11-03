@@ -205,6 +205,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CacheTarget dco_decode_box_autoadd_cache_target(dynamic raw);
 
   @protected
+  ProverTeeNetwork dco_decode_box_autoadd_prover_tee_network(dynamic raw);
+
+  @protected
   Proving dco_decode_box_autoadd_proving(dynamic raw);
 
   @protected
@@ -319,6 +322,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
+  ProverTeeNetwork? dco_decode_opt_box_autoadd_prover_tee_network(dynamic raw);
+
+  @protected
   Proving? dco_decode_opt_box_autoadd_proving(dynamic raw);
 
   @protected
@@ -350,6 +356,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProvedRequest dco_decode_proved_request(dynamic raw);
+
+  @protected
+  ProverTeeNetwork dco_decode_prover_tee_network(dynamic raw);
 
   @protected
   Proving dco_decode_proving(dynamic raw);
@@ -573,6 +582,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CacheTarget sse_decode_box_autoadd_cache_target(SseDeserializer deserializer);
 
   @protected
+  ProverTeeNetwork sse_decode_box_autoadd_prover_tee_network(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Proving sse_decode_box_autoadd_proving(SseDeserializer deserializer);
 
   @protected
@@ -705,6 +719,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
+  ProverTeeNetwork? sse_decode_opt_box_autoadd_prover_tee_network(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Proving? sse_decode_opt_box_autoadd_proving(SseDeserializer deserializer);
 
   @protected
@@ -742,6 +761,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProvedRequest sse_decode_proved_request(SseDeserializer deserializer);
+
+  @protected
+  ProverTeeNetwork sse_decode_prover_tee_network(SseDeserializer deserializer);
 
   @protected
   Proving sse_decode_proving(SseDeserializer deserializer);
@@ -1014,6 +1036,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_prover_tee_network(
+    ProverTeeNetwork self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_proving(Proving self, SseSerializer serializer);
 
   @protected
@@ -1182,6 +1210,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_prover_tee_network(
+    ProverTeeNetwork? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_proving(
     Proving? self,
     SseSerializer serializer,
@@ -1228,6 +1262,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_proved_request(ProvedRequest self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_prover_tee_network(
+    ProverTeeNetwork self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_proving(Proving self, SseSerializer serializer);

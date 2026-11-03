@@ -823,6 +823,9 @@ class ProvedRequest {
           totalMs == other.totalMs;
 }
 
+/// Select the network's signed prover policy and its SDK-pinned signers.
+enum ProverTeeNetwork { mainnet, devnet }
+
 /// Where a spend is proved.
 enum Proving {
   /// On the device, with the pinned proving key for its shape. The witness
@@ -1247,10 +1250,14 @@ class WalletConfig {
   /// Require attestation even for a loopback proxy. Remote URLs always attest.
   final bool? requireProverTee;
 
-  /// Trusted deployment policy JSON, supplied by the app, never by the prover.
-  /// Required for remote URLs and when require_prover_tee is true. Missing
-  /// policy fails before HTTP; no URL selects a policy automatically.
+  /// Trusted static policy JSON. Mutually exclusive with prover_tee_network.
+  /// Remote proving requires one of these policy options, even through a proxy.
   final String? proverTeePolicy;
+
+  /// Fetch and verify the network's signed policy using the SDK's pinned
+  /// signers. The Rust client owns policy refresh, expiry and re-attestation.
+  /// Selection is explicit and independent of the prover URL.
+  final ProverTeeNetwork? proverTeeNetwork;
 
   /// Refuse queue fallback and status polling for remote proofs.
   final bool? proverSyncOnly;
@@ -1294,6 +1301,7 @@ class WalletConfig {
     this.proverUrl,
     this.requireProverTee,
     this.proverTeePolicy,
+    this.proverTeeNetwork,
     this.proverSyncOnly,
     this.maxSpendInputs,
     this.reuseNotesMs,
@@ -1312,6 +1320,7 @@ class WalletConfig {
       proverUrl.hashCode ^
       requireProverTee.hashCode ^
       proverTeePolicy.hashCode ^
+      proverTeeNetwork.hashCode ^
       proverSyncOnly.hashCode ^
       maxSpendInputs.hashCode ^
       reuseNotesMs.hashCode ^
@@ -1332,6 +1341,7 @@ class WalletConfig {
           proverUrl == other.proverUrl &&
           requireProverTee == other.requireProverTee &&
           proverTeePolicy == other.proverTeePolicy &&
+          proverTeeNetwork == other.proverTeeNetwork &&
           proverSyncOnly == other.proverSyncOnly &&
           maxSpendInputs == other.maxSpendInputs &&
           reuseNotesMs == other.reuseNotesMs &&

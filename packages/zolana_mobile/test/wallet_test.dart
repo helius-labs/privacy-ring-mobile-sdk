@@ -764,7 +764,7 @@ void main() {
     await open(
       withUrls(
         rpc: 'http://localhost:8899',
-        indexer: 'http://127.0.0.1:8784/v1/zolana',
+        indexer: 'http://127.0.0.1:8784/v1/spr',
         keys: 'http://[::1]:9000',
         prover: 'http://127.0.0.1:3001',
       ),
@@ -835,7 +835,7 @@ void main() {
     final request = backend.transport!(
       TransportRequest(
         method: 'POST',
-        url: 'http://127.0.0.1:${server.port}/v1/zolana',
+        url: 'http://127.0.0.1:${server.port}/v1/spr',
         headers: const {},
         body: Uint8List(0),
       ),
@@ -1116,13 +1116,13 @@ void main() {
       for (final url in [
         'https://keys.example/k.key',
         'http://localhost:8899/',
-        'http://127.0.0.1:8784/v1/zolana',
+        'http://127.0.0.1:8784/v1/spr',
         'http://[::1]:1/',
       ]) {
         expect(isSecureUrl(url), isTrue, reason: url);
       }
       for (final url in [
-        'http://10.0.2.2:8784/v1/zolana',
+        'http://10.0.2.2:8784/v1/spr',
         'http://localhost.evil.com/',
         'ftp://keys.example/',
         '::not a url',

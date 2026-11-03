@@ -2,6 +2,13 @@
 
 Unreleased.
 
+* Pin merged Zolana #521 (SDK 0.8.0-alpha). Gateways now use `/v1/spr`,
+  `/attestation` and `Spr-Tee*` headers; update backend proxies together.
+* Expose `proverTeeNetwork` for SDK-verified signed mainnet/devnet policies.
+  The Rust client owns policy refresh, expiry and re-attestation. Custom static
+  `proverTeePolicy` remains supported; supplying both options is rejected.
+* Use the signed devnet policy in both examples instead of bundled measurements.
+
 * Use the finalized core ceremony keys for local transfer and merge proofs;
   upgrade the matching prover and on-chain verifier with this SDK.
 * Refresh the converted-key catalog and the proof fixtures for the final keys.
