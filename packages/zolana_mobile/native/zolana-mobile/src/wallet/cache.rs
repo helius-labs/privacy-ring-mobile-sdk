@@ -23,8 +23,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use zolana_client::{
-    compile_message, prover::MergeCacheTarget, user_registry::fetch_user_record_optional_checked,
-    ComputeBudgetConfig, MergeProver, ProofCompressed, ProverExt, Rpc, WitnessReader,
+    check_merge_record, compile_message, prover::MergeCacheTarget,
+    user_registry::fetch_user_record_optional_checked, ClientError, ComputeBudgetConfig,
+    MergeProver, ProofCompressed, ProverExt, Rpc, WitnessReader,
 };
 use zolana_interface::{
     instruction::instruction_data::CreateCacheData,
@@ -36,7 +37,7 @@ use zolana_program::instruction::{CacheWriteAccounts, CreateCache, MergeTransact
 use zolana_transaction::{
     instructions::merge::MergeTransaction, select_merge, Data, Utxo, WalletUtxo,
 };
-use zolana_user_registry_interface::{user_record_pda, MergeEncryptionScheme};
+use zolana_user_registry_interface::user_record_pda;
 
 /// Terms supplied by the sponsor. This version uses the sponsor as payer and
 /// cache writer, so the unsigned merge requires only its signature.
@@ -168,16 +169,12 @@ impl MobileWallet {
         let payer = parse_pubkey(&target.sponsor)?;
         let record = fetch_user_record_optional_checked(&self.client, self.owner)?
             .ok_or(WalletError::MergingDisabled)?;
-        if record.merge_encryption != MergeEncryptionScheme::PoseidonCtrV1 {
-            return Err(WalletError::MergingDisabled);
-        }
-        if record.nullifier_pubkey != self.address.nullifier_pubkey
-            || record.viewing_pubkey != *self.address.viewing_pubkey.as_bytes()
-        {
-            return Err(WalletError::RegistrationConflict {
+        check_merge_record(&record, self.owner, &self.address).map_err(|error| match error {
+            ClientError::MergeNullifierKeyMismatch => WalletError::RegistrationConflict {
                 owner: self.owner.to_string(),
-            });
-        }
+            },
+            error => error.into(),
+        })?;
         let reserved = self.reserved()?;
         let notes = self.recent_notes()?;
         let inputs = match ids {
