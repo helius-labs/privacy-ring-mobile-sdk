@@ -21,6 +21,7 @@ async-trait = "0.1"
 flutter_rust_bridge = "=2.11.1"
 futures-executor = "0.3"
 http = "1"
+hex = "0.4"
 hmac = "0.12"
 bytemuck = "1"
 mopro-ffi = { git = "https://github.com/sergeytimoshin/mopro", rev = "c1071f96fa5a28dca8e567dd3944331047450a2b", optional = true }

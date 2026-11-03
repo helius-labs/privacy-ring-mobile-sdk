@@ -109,6 +109,10 @@ class FakeCachedOutput implements CachedOutput {
 
 class FakeWallet implements MobileWallet {
   CacheTarget? cachedTarget;
+  List<String>? cachedInputIds;
+  List<SpendableNote> notes = [];
+  @override
+  Future<List<SpendableNote>> spendableNotes() async => notes;
   List<CachedOutput>? cachedSpendInputs;
   bool cacheReady = true;
   @override
@@ -118,8 +122,10 @@ class FakeWallet implements MobileWallet {
     int? maxInputs,
     Proving? proving,
     BigInt? priorityFeeLamports,
+    List<String>? inputIds,
   }) async {
     cachedTarget = target;
+    cachedInputIds = inputIds;
     return prepareMerge(
       mint: mint,
       maxInputs: maxInputs,
@@ -1439,6 +1445,69 @@ void main() {
       );
       expect(cached.isDisposed, isFalse);
       await wallet.verifyCachedOutputs([cached]);
+    },
+  );
+
+  test(
+    'note listing and explicit merges preserve the selected order while queued',
+    () async {
+      final (wallet, native, _, _) = await openWallet();
+      native.merging = true;
+      native.notes = [
+        SpendableNote(
+          id: 'b' * 64,
+          mint: null,
+          amount: BigInt.from(8),
+          treeId: 3,
+          mergeable: true,
+        ),
+        SpendableNote(
+          id: 'a' * 64,
+          mint: null,
+          amount: BigInt.from(5),
+          treeId: 3,
+          mergeable: true,
+        ),
+      ];
+      final notes = await wallet.spendableNotes();
+      expect(notes, native.notes);
+      final target = CacheTarget(
+        sponsor: 'Sponsor',
+        nonce: BigInt.one,
+        treeId: 3,
+        expiresAt: 2000000000,
+        slot: 0,
+        maxPriorityFeeLamports: BigInt.from(5000),
+        computeUnitLimit: 400000,
+      );
+      native.holdBalances = Completer();
+      final scan = wallet.balances();
+      final ids = notes.map((note) => note.id).toList();
+      final merge = wallet.prepareMerge(cacheTarget: target, inputIds: ids);
+      ids[0] = 'c' * 64;
+      native.holdBalances!.complete();
+      await scan;
+      await merge;
+      expect(native.cachedInputIds, ['b' * 64, 'a' * 64]);
+      expect(native.merges.single.$1, isNull);
+      expect(native.merges.single.$2, isNull);
+
+      for (final request in [
+        () => wallet.prepareMerge(inputIds: ids),
+        () => wallet.prepareMerge(
+          cacheTarget: target,
+          inputIds: ids,
+          maxInputs: 2,
+        ),
+        () => wallet.prepareMerge(
+          cacheTarget: target,
+          inputIds: ids,
+          mint: 'mint',
+        ),
+      ]) {
+        await expectLater(request(), throwsA(isA<WalletError>()));
+      }
+      expect(native.merges, hasLength(1));
     },
   );
 

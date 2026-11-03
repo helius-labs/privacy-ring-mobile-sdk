@@ -7061,6 +7061,7 @@ dependencies = [
  "bytemuck",
  "flutter_rust_bridge",
  "futures-executor",
+ "hex",
  "hmac 0.12.1",
  "http",
  "log",

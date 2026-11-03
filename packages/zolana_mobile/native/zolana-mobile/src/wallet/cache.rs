@@ -1,5 +1,6 @@
 //! Cache-targeted merges and authenticated restart state. The cache is an
 //! acceleration path: the same merge output is also published to the tree.
+use super::notes::{merge_input_ids, select_merge_inputs, MAX_CACHED_MERGE_INPUTS};
 use super::*;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -123,6 +124,9 @@ fn now() -> i64 {
 impl MobileWallet {
     /// Build an unsigned [CreateCache, MergeTransact], including an idempotent
     /// cache creation in every round. Notes come from the target's one tree.
+    /// With `input_ids`, use exactly those notes in that order, infer the mint,
+    /// and reject `mint` or `max_inputs`. Missing or reserved inputs fail rather
+    /// than selecting replacements. Save the ordered IDs with the run.
     pub fn prepare_cached_merge(
         &mut self,
         target: CacheTarget,
@@ -130,15 +134,21 @@ impl MobileWallet {
         max_inputs: Option<u32>,
         proving: Option<Proving>,
         priority_fee_lamports: Option<u64>,
+        input_ids: Option<Vec<String>>,
     ) -> Result<PreparedTransaction, WalletError> {
         target.validate()?;
+        if input_ids.is_some() && (mint.is_some() || max_inputs.is_some()) {
+            return Err(invalid(
+                "inputIds cannot be combined with mint or maxInputs",
+            ));
+        }
+        let ids = input_ids.as_deref().map(merge_input_ids).transpose()?;
         let fee = priority_fee_lamports.or(self.priority_fee).unwrap_or(0);
         if fee > target.max_priority_fee_lamports {
             return Err(invalid("priority fee exceeds sponsored run limit"));
         }
         let proving = self.proving(proving)?;
         let payer = parse_pubkey(&target.sponsor)?;
-        let asset = self.asset(mint)?;
         let record = fetch_user_record_optional_checked(&self.client, self.owner)?
             .ok_or(WalletError::MergingDisabled)?;
         if record.merge_encryption != MergeEncryptionScheme::PoseidonCtrV1 {
@@ -152,16 +162,18 @@ impl MobileWallet {
             });
         }
         let reserved = self.reserved()?;
-        let notes: Vec<_> = self
-            .recent_notes()?
-            .utxos()
-            .filter(|note| note.tree_id() == target.tree_id)
-            .cloned()
-            .collect();
-        // The pinned example fits 51 real inputs with CreateCache in a 4096-byte
-        // v1 message. Also check the actual compiled transaction below.
-        let cap = max_inputs.unwrap_or(24).min(51) as usize;
-        let inputs = select_merge(notes.iter(), asset.mint, cap, &reserved)?;
+        let notes = self.recent_notes()?;
+        let inputs = match ids {
+            Some(ids) => select_merge_inputs(notes.utxos(), &ids, target.tree_id, &reserved)?,
+            None => select_merge(
+                notes
+                    .utxos()
+                    .filter(|note| note.tree_id() == target.tree_id),
+                self.asset(mint)?.mint,
+                max_inputs.unwrap_or(24).min(MAX_CACHED_MERGE_INPUTS as u32) as usize,
+                &reserved,
+            )?,
+        };
         let spends = nullifiers(&inputs);
         let expiry = merge_expiry().min(target.expires_at as u64);
         let merge = MergeTransaction::new(inputs)?
@@ -171,7 +183,7 @@ impl MobileWallet {
         let cached = CachedOutput {
             target: target.clone(),
             owner: self.owner.to_string(),
-            mint: mint_name(&asset.mint),
+            mint: mint_name(&merge.output_utxo.asset.asset),
             asset_id: merge.output_utxo.asset.asset_id,
             amount: merge.output_utxo.amount,
             blinding: merge.output_utxo.blinding,
@@ -218,7 +230,7 @@ impl MobileWallet {
         let budget = ComputeBudgetConfig::new(target.compute_unit_limit).with_priority_fee(fee);
         if !zolana_client::transaction_size(&payer, &instructions, budget)?.fits() {
             return Err(invalid(
-                "cached merge exceeds transaction limits; reduce maxInputs",
+                "cached merge exceeds transaction limits; use fewer inputs",
             ));
         }
         let message = compile_message(&payer, &instructions, Default::default(), budget)?;
@@ -551,15 +563,34 @@ mod tests {
         let mut terms = target();
         terms.slot = CACHE_CAPACITY as u8;
         assert!(wallet
-            .prepare_cached_merge(terms, None, None, None, None)
+            .prepare_cached_merge(terms, None, None, None, None, None)
             .is_err());
         let mut terms = target();
         terms.expires_at = now() - 1;
         assert!(wallet
-            .prepare_cached_merge(terms, None, None, None, None)
+            .prepare_cached_merge(terms, None, None, None, None, None)
             .is_err());
         assert!(wallet
-            .prepare_cached_merge(target(), None, None, None, Some(5_001))
+            .prepare_cached_merge(target(), None, None, None, Some(5_001), None)
+            .is_err());
+        let ids = Some(vec![hex::encode([1; 32]), hex::encode([2; 32])]);
+        for (mint, max_inputs) in [
+            (Some(Pubkey::new_unique().to_string()), None),
+            (None, Some(2)),
+        ] {
+            assert!(wallet
+                .prepare_cached_merge(target(), mint, max_inputs, None, None, ids.clone())
+                .is_err());
+        }
+        assert!(wallet
+            .prepare_cached_merge(
+                target(),
+                None,
+                None,
+                None,
+                None,
+                Some(vec![hex::encode([1; 32])])
+            )
             .is_err());
     }
 
