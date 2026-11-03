@@ -1,16 +1,30 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use solana_keypair::Keypair;
 use solana_signer::Signer;
-use zolana_client::rpc::{OutputContext, OutputSlot};
-use zolana_interface::instruction::{CircuitId, InputUtxo, TransactProof, TreeContext};
+use solana_transaction::versioned::VersionedTransaction;
+use zolana_client::{
+    compile_message,
+    rpc::{OutputContext, OutputSlot},
+    ComputeBudgetConfig, UtxoScanResult,
+};
+use zolana_interface::{
+    instruction::{CircuitId, InputUtxo, TransactProof, TreeContext},
+    pda,
+};
 use zolana_program::instruction::Transact;
-use zolana_transaction::{AssetRegistry, History, Mint, Utxo};
+use zolana_transaction::{
+    instructions::transact::ConfidentialTransaction, AssetRegistry, History, Mint, Utxo, WalletUtxo,
+};
+use zolana_user_registry_interface::MergeEncryptionScheme;
 
 use super::*;
-use crate::{wallet::history::BlockTime, ActivityKind, WalletConfig};
+use crate::{derivation_message, wallet::history::BlockTime, ActivityKind, WalletConfig};
 
 /// One asset's private payments and public withdrawals in a spend.
 type Leg<'a> = (

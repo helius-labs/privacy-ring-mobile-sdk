@@ -1,6 +1,6 @@
 //! Public note descriptions and exact merge input selection. Private openings
 //! stay in the wallet; the application refers to notes by their commitments.
-use super::{cache::invalid, MobileWallet};
+use super::{util::invalid, MobileWallet};
 use crate::{asset::mint_name, error::WalletError};
 use std::collections::{HashMap, HashSet};
 use zolana_transaction::WalletUtxo;
