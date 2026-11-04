@@ -1339,8 +1339,8 @@ mod tests {
             image,
             root.join(key_set()).join(format!(
                 "k.key.{}.solver{}",
-                zopro_zolana::zopro_prover::raw::FORMAT,
-                zopro_zolana::zopro_core::solver_image_version()
+                zopro_spr::zopro_prover::raw::FORMAT,
+                zopro_spr::zopro_core::solver_image_version()
             ))
         );
         fs::write(&image, b"image").unwrap();

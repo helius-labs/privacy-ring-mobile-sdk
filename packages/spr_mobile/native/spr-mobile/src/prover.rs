@@ -79,8 +79,8 @@ pub(crate) fn image_path(key: &std::path::Path) -> std::path::PathBuf {
         .unwrap_or_default();
     name.push(format!(
         ".{}.solver{}",
-        zopro_zolana::zopro_prover::raw::FORMAT,
-        zopro_zolana::zopro_core::solver_image_version()
+        zopro_spr::zopro_prover::raw::FORMAT,
+        zopro_spr::zopro_core::solver_image_version()
     ));
     key.with_file_name(name)
 }
@@ -88,7 +88,7 @@ pub(crate) fn image_path(key: &std::path::Path) -> std::path::PathBuf {
 /// A key file loaded through its image: mapped, written from the key file
 /// first when there is none or it does not load. A device that cannot
 /// write it (a full disk) proves from the key file in memory.
-pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_zolana::Prover, WalletError> {
+pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_spr::Prover, WalletError> {
     device_log();
     let failed = |e: &dyn std::fmt::Display| {
         log::warn!("zopro: {}: {e}", path.display());
@@ -96,7 +96,7 @@ pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_zolana::Prover, W
     };
     // The GPU driver's compiled kernels, beside the keys: a phone compiles
     // them once rather than at every launch.
-    zopro_zolana::zopro_core::set_gpu_pipeline_cache(&path.with_file_name("zopro-gpu.cache"));
+    zopro_spr::zopro_core::set_gpu_pipeline_cache(&path.with_file_name("zopro-gpu.cache"));
     let image = image_path(path);
     if image.is_file() {
         match load_image(&image) {
@@ -110,7 +110,7 @@ pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_zolana::Prover, W
             log::warn!("zopro: {}: {e}; proving from the key file", image.display());
             let _ = std::fs::remove_file(&image);
             let key = map(path).map_err(|e| failed(&e))?;
-            zopro_zolana::Prover::load(&key).map_err(|e| failed(&e))
+            zopro_spr::Prover::load(&key).map_err(|e| failed(&e))
         }
     }
 }
@@ -123,9 +123,9 @@ fn map(path: &std::path::Path) -> Result<memmap2::Mmap, String> {
     unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())
 }
 
-fn load_image(image: &std::path::Path) -> Result<zopro_zolana::Prover, String> {
-    let prover = zopro_zolana::zopro_prover::Prover::load_image(std::sync::Arc::new(map(image)?))?;
-    zopro_zolana::Prover::new(prover)
+fn load_image(image: &std::path::Path) -> Result<zopro_spr::Prover, String> {
+    let prover = zopro_spr::zopro_prover::Prover::load_image(std::sync::Arc::new(map(image)?))?;
+    zopro_spr::Prover::new(prover)
 }
 
 /// The key's image, whole or absent: written beside, then renamed.
@@ -135,7 +135,7 @@ fn write_image(key: &std::path::Path, image: &std::path::Path) -> Result<(), Str
     let written = (|| -> Result<(), String> {
         let file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
         let mut out = std::io::BufWriter::new(file);
-        zopro_zolana::zopro_prover::Prover::write_image(&key, &mut out)?;
+        zopro_spr::zopro_prover::Prover::write_image(&key, &mut out)?;
         let file = out.into_inner().map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
         std::fs::rename(&partial, image).map_err(|e| e.to_string())
@@ -216,8 +216,8 @@ impl NativeProver {
         let load_ms = elapsed_ms(loading);
         let loaded = state.loaded.as_mut().ok_or(WalletError::ProverClosed)?;
         let proof = loaded.prover.prove(body).map_err(|error| match error {
-            zopro_zolana::Error::Unsupported => WalletError::UnsupportedCircuit,
-            zopro_zolana::Error::Prove(message) => {
+            zopro_spr::Error::Unsupported => WalletError::UnsupportedCircuit,
+            zopro_spr::Error::Prove(message) => {
                 log::warn!("zopro: {name}: {message}");
                 WalletError::ProofFailed
             }

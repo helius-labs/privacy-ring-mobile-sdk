@@ -14,8 +14,7 @@ use spr_hasher::{Hasher, Poseidon};
 // system allocator; zopro's gives it back (a key's first load left 200 MB
 // charged on an iPad). Elsewhere it is the system allocator.
 #[global_allocator]
-static ALLOCATOR: zopro_zolana::zopro_core::alloc::Allocator =
-    zopro_zolana::zopro_core::alloc::Allocator;
+static ALLOCATOR: zopro_spr::zopro_core::alloc::Allocator = zopro_spr::zopro_core::alloc::Allocator;
 
 mod activity;
 mod asset;
@@ -59,7 +58,7 @@ struct Loaded {
     /// the application loaded itself as a [`LocalProver`]. The native prover
     /// switches keys only in the first case.
     key: Option<String>,
-    prover: zopro_zolana::Prover,
+    prover: zopro_spr::Prover,
 }
 
 impl ProverState {
@@ -193,7 +192,7 @@ impl LocalProver {
             return Err(WalletError::ProverClosed);
         }
         let proof = proof.map_err(|error| match error {
-            zopro_zolana::Error::Unsupported | zopro_zolana::Error::Shape => {
+            zopro_spr::Error::Unsupported | zopro_spr::Error::Shape => {
                 WalletError::UnsupportedCircuit
             }
             _ => WalletError::ProofFailed,
