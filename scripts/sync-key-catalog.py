@@ -24,7 +24,7 @@ else:
 if hashlib.sha256(data).hexdigest() != source["sha256"]:
     raise SystemExit("upstream zopro manifest does not match the reviewed SHA-256")
 manifest = json.loads(data)
-destination = root / "packages/zolana_mobile/native/zolana-mobile/zopro-keys.lock"
+destination = root / "packages/spr_mobile/native/spr-mobile/zopro-keys.lock"
 if args.check:
     if json.loads(destination.read_text()) != manifest:
         raise SystemExit("zopro-keys.lock differs from the reviewed catalog; run scripts/sync-key-catalog.py")

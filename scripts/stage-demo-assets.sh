@@ -6,7 +6,7 @@ set -euo pipefail
 # copies from $ZOPRO_KEYS_DIR when set) and is checked against the wallet's
 # lockfile.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-asset_dir="$repo_root/packages/zolana_mobile/example/assets/proving"
+asset_dir="$repo_root/packages/spr_mobile/example/assets/proving"
 key_name="transfer_confidential_2_2.zopro"
 # The lockfile's prefix; its last part names the key set's directory, as the
 # wallet lays out its key directory.

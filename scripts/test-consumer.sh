@@ -17,11 +17,11 @@ package="$temporary/package"
 consumer="$temporary/consumer"
 mkdir -p "$package"
 
-tar -C "$repo_root/packages/zolana_mobile" \
+tar -C "$repo_root/packages/spr_mobile" \
   --exclude=target --exclude=build --exclude=.dart_tool \
-  -czf "$temporary/zolana_mobile.tar.gz" \
+  -czf "$temporary/spr_mobile.tar.gz" \
   pubspec.yaml README.md CHANGELOG.md LICENSE lib hook android rust native cargokit
-tar -xzf "$temporary/zolana_mobile.tar.gz" -C "$package"
+tar -xzf "$temporary/spr_mobile.tar.gz" -C "$package"
 cargo metadata --manifest-path "$package/rust/Cargo.toml" --format-version 1 > "$temporary/metadata.json"
 
 flutter create --platforms=android,ios --project-name=zolana_consumer "$consumer"
@@ -33,7 +33,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  zolana_mobile:
+  spr_mobile:
     path: ../package
   # A dependency, not a dev one: Flutter leaves dev dependencies out of
   # release builds, and the bench app's release must carry the plugin.
@@ -47,15 +47,15 @@ flutter:
     - assets/proving/
 YAML
 mkdir -p "$consumer/assets/proving" "$consumer/integration_test"
-cp "$repo_root/packages/zolana_mobile/example/assets/proving/transfer_confidential_2_2.zopro" "$consumer/assets/proving/"
+cp "$repo_root/packages/spr_mobile/example/assets/proving/transfer_confidential_2_2.zopro" "$consumer/assets/proving/"
 cp "$repo_root"/fixtures/prove-request-*.json "$consumer/assets/proving/"
 cp "$repo_root/scripts/consumer_fixture/prover_test.dart" "$consumer/integration_test/"
 # The proof timing harness, run on the consumer so that CI builds one app.
-cp "$repo_root/packages/zolana_mobile/example/integration_test/proof_timing_test.dart" "$consumer/integration_test/"
+cp "$repo_root/packages/spr_mobile/example/integration_test/proof_timing_test.dart" "$consumer/integration_test/"
 cd "$consumer"
 flutter pub get
 flutter analyze integration_test
-printf 'Consumer package built from %s\n' "$temporary/zolana_mobile.tar.gz"
+printf 'Consumer package built from %s\n' "$temporary/spr_mobile.tar.gz"
 case "${1:-android}" in
   android) flutter build apk --release ;;
   ios) flutter build ios --simulator ;;

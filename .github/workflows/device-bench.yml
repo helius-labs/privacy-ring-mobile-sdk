@@ -57,7 +57,7 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-
       - run: sccache --start-server
       - run: ./scripts/stage-demo-assets.sh
@@ -136,7 +136,7 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-ios-device-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-ios-device-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-ios-device-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-
       - if: steps.precompiled.outputs.found != 'true'
         run: sccache --start-server

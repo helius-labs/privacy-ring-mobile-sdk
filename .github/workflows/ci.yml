@@ -22,7 +22,7 @@ jobs:
       - run: >
           dart pub get && dart analyze --no-fatal-warnings
           && dart run test/crate_hash_test.dart && dart run test/download_test.dart
-        working-directory: packages/zolana_mobile/cargokit/build_tool
+        working-directory: packages/spr_mobile/cargokit/build_tool
 
   min-flutter:
     runs-on: ubuntu-latest
@@ -33,9 +33,9 @@ jobs:
           flutter-version: 3.47.2
           cache: true
       - run: flutter pub get && flutter analyze && flutter test
-        working-directory: packages/zolana_mobile
+        working-directory: packages/spr_mobile
       - run: flutter pub get && flutter analyze
-        working-directory: packages/zolana_mobile/example
+        working-directory: packages/spr_mobile/example
 
   # A pull request that changes the Rust crate has no precompiled binaries, so
   # every consumer and example build compiles it from source. sccache keeps the
@@ -74,12 +74,12 @@ jobs:
       - run: ./scripts/stage-demo-assets.sh
       - run: cargo test --workspace
         env:
-          ZOLANA_TEST_KEYS: ${{ github.workspace }}/packages/zolana_mobile/example/assets/proving
-      - run: cargo test -p zolana-mobile proves_a_client_request_with_the_pinned_key -- --ignored
+          ZOLANA_TEST_KEYS: ${{ github.workspace }}/packages/spr_mobile/example/assets/proving
+      - run: cargo test -p spr-mobile proves_a_client_request_with_the_pinned_key -- --ignored
         env:
           ZOLANA_TEST_KEY_DIR: ${{ github.workspace }}/.cache/proving
       - run: flutter pub get && flutter analyze && flutter test
-        working-directory: packages/zolana_mobile
+        working-directory: packages/spr_mobile
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
@@ -122,7 +122,7 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-android-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-
       - run: sccache --start-server
       - run: ./scripts/stage-demo-assets.sh
@@ -180,17 +180,17 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-android-example-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-android-example-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-android-example-sccache0.18.0-ndk-r27c-rust${{ steps.rust.outputs.cachekey }}-
       - run: sccache --start-server
       - run: ./scripts/stage-demo-assets.sh
       - run: flutter pub get && flutter analyze && flutter build apk --release
-        working-directory: packages/zolana_mobile/example
+        working-directory: packages/spr_mobile/example
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
       - name: Check 16 KB page alignment
-        run: bash scripts/check-android-page-size.sh packages/zolana_mobile/example/build/app/outputs/flutter-apk/app-release.apk
+        run: bash scripts/check-android-page-size.sh packages/spr_mobile/example/build/app/outputs/flutter-apk/app-release.apk
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
@@ -242,7 +242,7 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-ios-arm64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-ios-arm64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-ios-arm64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-
       - if: steps.precompiled.outputs.found != 'true'
         run: sccache --start-server
@@ -255,7 +255,7 @@ jobs:
         run: bash scripts/test-ios-simulator.sh
       - name: Check that the native library runs on iOS 16
         run: |
-          for archive in "$ZOLANA_CONSUMER_DIR"/consumer/.dart_tool/hooks_runner/shared/zolana_mobile/build/*/static/libmopro_flutter_bindings.a; do
+          for archive in "$ZOLANA_CONSUMER_DIR"/consumer/.dart_tool/hooks_runner/shared/spr_mobile/build/*/static/libmopro_flutter_bindings.a; do
             bash scripts/check-ios-minimum.sh "$archive" 16.0
           done
       # Saved after a green test, as in the Android emulator jobs.
@@ -309,7 +309,7 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/sccache
-          key: native-ios-example-x86_64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/zolana_mobile/rust/Cargo.lock') }}
+          key: native-ios-example-x86_64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('packages/spr_mobile/rust/Cargo.lock') }}
           restore-keys: native-ios-example-x86_64-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-
       - if: steps.precompiled.outputs.found != 'true'
         run: sccache --start-server
@@ -319,25 +319,25 @@ jobs:
       # CocoaPods. The build hook's outputs are cached, so it only rebuilds the
       # app.
       - run: flutter pub get && flutter build ios --simulator
-        working-directory: packages/zolana_mobile/example
+        working-directory: packages/spr_mobile/example
         env:
           FLUTTER_XCODE_ARCHS: x86_64
           FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
       - run: flutter config --no-enable-swift-package-manager && flutter build ios --simulator
-        working-directory: packages/zolana_mobile/example
+        working-directory: packages/spr_mobile/example
         env:
           FLUTTER_XCODE_ARCHS: x86_64
           FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
       - name: Check that the native library runs on iOS 16
         run: |
-          for archive in packages/zolana_mobile/example/.dart_tool/hooks_runner/shared/zolana_mobile/build/*/static/libmopro_flutter_bindings.a; do
+          for archive in packages/spr_mobile/example/.dart_tool/hooks_runner/shared/spr_mobile/build/*/static/libmopro_flutter_bindings.a; do
             bash scripts/check-ios-minimum.sh "$archive" 16.0
           done
       # App Store Connect rejects a framework whose binary needs a newer iOS
       # than its Info.plist names (ITMS-90208).
       - name: Check the iOS minimum in the framework's Info.plist
         run: |
-          framework=packages/zolana_mobile/example/build/ios/iphonesimulator/Runner.app/Frameworks/mopro_flutter_bindings.framework
+          framework=packages/spr_mobile/example/build/ios/iphonesimulator/Runner.app/Frameworks/mopro_flutter_bindings.framework
           bash scripts/check-ios-minimum.sh "$framework/mopro_flutter_bindings" \
             "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$framework/Info.plist")"
       - if: steps.precompiled.outputs.found != 'true' && steps.native-cache.outputs.cache-hit != 'true'

@@ -1,0 +1,817 @@
+//! The application's HTTP client, the wallet's only network path. Solana RPC
+//! and indexer calls, proving-key downloads and backend proofs all go through
+//! it; the wallet opens no connection of its own.
+
+use std::{collections::HashMap, fmt, sync::Arc, time::Duration};
+
+use flutter_rust_bridge::DartFnFuture;
+use reqwest::{header::HeaderMap, ResponseBuilderExt, StatusCode};
+use reqwest_middleware::{ClientBuilder, Middleware, Next};
+use solana_commitment_config::CommitmentConfig;
+use solana_rpc_client::{
+    http_sender::HttpSender,
+    rpc_client::{RpcClient, RpcClientConfig},
+};
+use spr_api::{ApiError, BlockingHttpClient, BlockingSprApi, HttpRequest, HttpResponse};
+use spr_client::{ProverClient, SolanaRpc, SprIndexer};
+
+use crate::error::WalletError;
+
+/// Select the network's signed prover policy and its SDK-pinned signers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProverTeeNetwork {
+    Mainnet,
+    Devnet,
+}
+
+/// One HTTP request of the wallet.
+pub struct TransportRequest {
+    /// `POST` for Solana RPC and indexer calls and proof requests, `GET` for
+    /// proving keys and the status of a queued proof.
+    pub method: String,
+    pub url: String,
+    /// The content type of a `POST`, `x-sync` or `x-async` on a proof
+    /// request, and `range` on a proving-key download; nothing else.
+    pub headers: HashMap<String, String>,
+    /// Empty for a `GET`. A proof request's body is the transaction's
+    /// witness, the wallet's nullifier secret included.
+    pub body: Vec<u8>,
+    /// The most bytes the response body may hold, for a proving-key download
+    /// (the size of the part it asks for). A transport stops reading and
+    /// fails past it; the wallet refuses a longer body either way.
+    pub max_response_bytes: Option<u32>,
+    /// The caller's bound on the request, in milliseconds, when it has one
+    /// (600 s for a proof request, 30 s for a status poll); otherwise the
+    /// transport's own applies.
+    pub timeout_ms: Option<u32>,
+    /// For a proving-key download: the file to write the body, a part of the
+    /// key, to as it arrives. The response then carries no body. The wallet
+    /// appends the part to the key and checks the key once it is complete. A
+    /// transport that returns the body instead still works, holding the part
+    /// in memory.
+    pub download_path: Option<String>,
+}
+
+/// The server's response, whatever its status.
+pub struct TransportResponse {
+    pub status: u16,
+    /// The response's headers as they arrived. A prover inside a TEE says in
+    /// them that its body is encrypted; a TEE call fails without them.
+    pub headers: HashMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+/// What the application's transport answered: the server's response, or the
+/// failure that left none. The package's Dart side builds it and never
+/// throws, so no Dart stack trace reaches the wallet.
+pub struct TransportOutcome {
+    pub response: Option<TransportResponse>,
+    pub failure: Option<TransportFailure>,
+}
+
+/// Why the application's transport has no response.
+#[derive(Debug)]
+pub struct TransportFailure {
+    pub message: String,
+    /// The response's status, when it arrived and its body could not be read.
+    /// The server got the request and may have acted on it, so the wallet does
+    /// not send it again: a prover would prove the spend twice.
+    pub status: Option<u16>,
+}
+
+/// Sends the wallet's requests through the application.
+#[derive(Clone)]
+pub struct Transport {
+    callback: Arc<dyn Fn(TransportRequest) -> DartFnFuture<TransportOutcome> + Send + Sync>,
+}
+
+impl Transport {
+    /// `send` answers a request with the server's response, or with a failure
+    /// when there is none. The wallet waits for it, so it must not call the
+    /// wallet.
+    pub fn new(
+        send: impl Fn(TransportRequest) -> DartFnFuture<TransportOutcome> + Send + Sync + 'static,
+    ) -> Transport {
+        Transport {
+            callback: Arc::new(send),
+        }
+    }
+
+    async fn send(&self, request: TransportRequest) -> Result<TransportResponse, TransportFailed> {
+        let outcome = (self.callback)(request).await;
+        outcome.response.ok_or_else(|| {
+            TransportFailed(outcome.failure.unwrap_or(TransportFailure {
+                message: String::new(),
+                status: None,
+            }))
+        })
+    }
+
+    /// Blocks until the application answers. The wallet's methods run on a
+    /// worker thread and the application answers on its own event loop, so
+    /// waiting here never holds up the answer.
+    pub(crate) fn send_blocking(
+        &self,
+        request: TransportRequest,
+    ) -> Result<TransportResponse, TransportFailed> {
+        futures_executor::block_on(self.send(request))
+    }
+
+    /// The Solana RPC client of `url`: solana-rpc-client's own sender, whose
+    /// requests this transport answers, so its JSON-RPC parsing, error data
+    /// and retries stay.
+    pub(crate) fn solana_rpc(&self, url: String) -> Result<SolanaRpc, WalletError> {
+        // The middleware stack needs a base client. The sender below answers
+        // every request itself, so the base never sends.
+        let base =
+            reqwest::Client::builder()
+                .build()
+                .map_err(|failure| WalletError::TransportFailed {
+                    message: failure.to_string(),
+                })?;
+        let client = ClientBuilder::new(base).with(Sender(self.clone())).build();
+        Ok(SolanaRpc::with_client(RpcClient::new_sender(
+            HttpSender::new_with_client_with_middleware(url, client),
+            RpcClientConfig::with_commitment(CommitmentConfig::confirmed()),
+        )))
+    }
+
+    /// The indexer client of `url`, through this transport.
+    pub(crate) fn indexer(&self, url: &str) -> SprIndexer {
+        SprIndexer::with_api(BlockingSprApi::with_client(url, Sender(self.clone())))
+    }
+
+    /// The SDK's prover client of the prover at `url`, through this transport.
+    pub(crate) fn configured_prover(
+        &self,
+        url: String,
+        require_tee: bool,
+        policy_json: Option<&str>,
+        network: Option<ProverTeeNetwork>,
+        sync_only: bool,
+    ) -> Result<ProverClient, WalletError> {
+        if policy_json.is_some() && network.is_some() {
+            return Err(WalletError::Client {
+                message: "choose proverTeeNetwork or proverTeePolicy, not both".into(),
+            });
+        }
+        let mut client = ProverClient::with_client(
+            url,
+            ProverSender {
+                sender: Sender(self.clone()),
+                sync_only,
+            },
+        );
+        if let Some(network) = network {
+            use spr_client::prover::tee::{SignedTeePolicy, TeeNetwork};
+            let network = match network {
+                ProverTeeNetwork::Mainnet => TeeNetwork::Mainnet,
+                ProverTeeNetwork::Devnet => TeeNetwork::Devnet,
+            };
+            client = client.with_signed_tee(SignedTeePolicy::for_network(network));
+        } else if require_tee || policy_json.is_some() || client.has_tee() {
+            use spr_client::prover::tee::TeePolicy;
+            let json = policy_json.ok_or(WalletError::ProverPolicyMissing)?;
+            let policy = TeePolicy::from_file_json(json).map_err(|error| WalletError::Client {
+                message: error.to_string(),
+            })?;
+            client = client.with_tee(policy);
+        }
+        Ok(client)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prover(&self, url: String) -> ProverClient {
+        ProverClient::with_client(url, Sender(self.clone()))
+    }
+}
+
+/// The application's transport failed without a response.
+#[derive(Debug)]
+pub(crate) struct TransportFailed(TransportFailure);
+
+impl fmt::Display for TransportFailed {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let TransportFailure { message, status } = &self.0;
+        match status {
+            Some(status) => write!(
+                formatter,
+                "transport failed after status {status}: {message}"
+            ),
+            None => write!(formatter, "transport failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for TransportFailed {}
+
+/// The HTTP client the SDK's clients call: each request becomes a
+/// [`TransportRequest`] with its headers as they are.
+struct Sender(Transport);
+
+fn header_map(headers: &HeaderMap) -> HashMap<String, String> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+            (name.to_string(), value)
+        })
+        .collect()
+}
+
+fn millis(timeout: Duration) -> u32 {
+    u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX)
+}
+
+/// How long a transport waits for an SDK request in all. The SDK gives up at
+/// `timeout` and counts the request as unanswered, which it sends again; the
+/// transport stops a second earlier, so it can still say whether the status
+/// arrived ([`ApiError::ResponseLost`], which the SDK does not resend).
+fn transport_deadline(timeout: Duration) -> Duration {
+    const MARGIN: Duration = Duration::from_secs(1);
+    timeout.saturating_sub(MARGIN).max(timeout / 2)
+}
+
+impl fmt::Debug for Sender {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Sender")
+    }
+}
+
+#[async_trait::async_trait]
+impl Middleware for Sender {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        _: &mut http::Extensions,
+        _: Next<'_>,
+    ) -> reqwest_middleware::Result<reqwest::Response> {
+        let url = request.url().clone();
+        let headers = header_map(request.headers());
+        let body = request
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .unwrap_or_default()
+            .to_vec();
+        let response = self
+            .0
+            .send(TransportRequest {
+                method: request.method().to_string(),
+                url: url.to_string(),
+                headers,
+                body,
+                max_response_bytes: None,
+                timeout_ms: None,
+                download_path: None,
+            })
+            .await
+            .map_err(reqwest_middleware::Error::middleware)?;
+        let mut builder = http::Response::builder().status(response.status).url(url);
+        if let Some(headers) = builder.headers_mut() {
+            *headers = response_headers(response.headers);
+        }
+        let response = builder
+            .body(response.body)
+            .map_err(reqwest_middleware::Error::middleware)?;
+        Ok(response.into())
+    }
+}
+
+/// A failure after the status arrived is [`ApiError::ResponseLost`], which the
+/// prover client does not retry; any other is [`ApiError::HttpClient`].
+impl BlockingHttpClient for Sender {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ApiError> {
+        let HttpRequest {
+            method,
+            url,
+            headers,
+            mut body,
+            timeout,
+            body_limit,
+        } = request;
+        let request = TransportRequest {
+            method: method.to_string(),
+            url,
+            headers: header_map(&headers),
+            // Moved, not copied: the bridge hands it to the application.
+            body: std::mem::take(&mut *body),
+            max_response_bytes: body_limit.map(|limit| u32::try_from(limit).unwrap_or(u32::MAX)),
+            timeout_ms: timeout.map(|timeout| millis(transport_deadline(timeout))),
+            download_path: None,
+        };
+        let response = self.0.send_blocking(request).map_err(|error| {
+            if error.0.status.is_some() {
+                ApiError::ResponseLost(Box::new(error))
+            } else {
+                ApiError::HttpClient(Box::new(error))
+            }
+        })?;
+        let status = StatusCode::from_u16(response.status)
+            .map_err(|error| ApiError::HttpClient(Box::new(error)))?;
+        Ok(HttpResponse {
+            status,
+            headers: response_headers(response.headers),
+            body: response.body,
+        })
+    }
+}
+
+/// The headers a transport returned, without any that are not valid HTTP.
+fn response_headers(headers: HashMap<String, String>) -> HeaderMap {
+    headers
+        .into_iter()
+        .filter_map(|(name, value)| {
+            Some((
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()).ok()?,
+                reqwest::header::HeaderValue::from_str(&value).ok()?,
+            ))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::Mutex;
+
+    use solana_keypair::Keypair;
+    use solana_signer::Signer;
+
+    use super::*;
+    use crate::{derivation_message, MobileWallet, WalletConfig};
+
+    pub(crate) type Requests = Arc<Mutex<Vec<TransportRequest>>>;
+
+    /// A transport that answers each request with `answer`, a response or a
+    /// failure, and records it.
+    pub(crate) fn fake(
+        answer: impl Fn(&TransportRequest) -> Result<TransportResponse, TransportFailure>
+            + Send
+            + Sync
+            + 'static,
+    ) -> (Transport, Requests) {
+        let requests = Requests::default();
+        let recorded = requests.clone();
+        let transport = Transport::new(move |request| {
+            let (response, failure) = match answer(&request) {
+                Ok(response) => (Some(response), None),
+                Err(failure) => (None, Some(failure)),
+            };
+            recorded.lock().unwrap().push(request);
+            Box::pin(async move { TransportOutcome { response, failure } })
+        });
+        (transport, requests)
+    }
+
+    /// A transport with no network: every request fails as a refused
+    /// connection does, naming the URL as the application's exception would.
+    pub(crate) fn unreachable() -> Transport {
+        fake(|request| refused(format!("connection refused ({})", request.url))).0
+    }
+
+    /// A failure before any response.
+    pub(crate) fn refused(message: String) -> Result<TransportResponse, TransportFailure> {
+        Err(TransportFailure {
+            message,
+            status: None,
+        })
+    }
+
+    pub(crate) fn ok(body: &str) -> Result<TransportResponse, TransportFailure> {
+        Ok(TransportResponse {
+            status: 200,
+            headers: Default::default(),
+            body: body.as_bytes().to_vec(),
+        })
+    }
+
+    const RPC_URL: &str = "https://rpc.example/?api-key=secret";
+    const INDEXER_URL: &str = "https://indexer.example/v1/spr?api-key=secret";
+
+    fn open(signer: &Keypair, transport: Transport) -> MobileWallet {
+        let config = WalletConfig {
+            rpc_url: RPC_URL.to_string(),
+            indexer_url: INDEXER_URL.to_string(),
+            proving_key_dir: std::env::temp_dir().display().to_string(),
+            proving_key_url: None,
+            proving_key_catalog: None,
+            proving: None,
+            prover_url: None,
+            require_prover_tee: None,
+            prover_tee_policy: None,
+            prover_tee_network: None,
+            prover_sync_only: None,
+            max_spend_inputs: None,
+            reuse_notes_ms: None,
+            mints: None,
+            priority_fee_lamports: None,
+        };
+        let pubkey = signer.pubkey().to_string();
+        let signature = signer.sign_message(&derivation_message(pubkey.clone()).unwrap());
+        MobileWallet::open(config, pubkey, signature.as_ref().to_vec(), transport).unwrap()
+    }
+
+    fn json(body: &[u8]) -> serde_json::Value {
+        serde_json::from_slice(body).unwrap()
+    }
+
+    fn json_content_type() -> HashMap<String, String> {
+        HashMap::from([("content-type".to_string(), "application/json".to_string())])
+    }
+
+    #[test]
+    fn sends_rpc_and_indexer_requests_through_the_transport() {
+        // An empty page of every indexer method the wallet reads.
+        let (transport, requests) = fake(|request| {
+            ok(
+                if request.url == RPC_URL && json(&request.body)["method"] == "getSlot" {
+                    r#"{"jsonrpc":"2.0","id":0,"result":1}"#
+                } else if request.url == RPC_URL {
+                    r#"{"jsonrpc":"2.0","id":0,"result":{"context":{"slot":1},"value":null}}"#
+                } else {
+                    r#"{"jsonrpc":"2.0","id":"test-account","result":{"context":{"blockTime":0,"slot":1},"data":[],"paginationToken":null}}"#
+                },
+            )
+        });
+        let mut wallet = open(&Keypair::new(), transport);
+
+        assert_eq!(
+            wallet.registration_status(),
+            Ok(crate::RegistrationStatus::NotRegistered)
+        );
+        let rpc = requests.lock().unwrap().pop().unwrap();
+        assert_eq!((rpc.method.as_str(), rpc.url.as_str()), ("POST", RPC_URL));
+        assert_eq!(rpc.headers, json_content_type());
+        assert_eq!((rpc.max_response_bytes, rpc.timeout_ms), (None, None));
+        assert_eq!(json(&rpc.body)["method"], "getAccountInfo");
+
+        assert_eq!(wallet.private_balance(None), Ok(0));
+        let mut indexer = std::mem::take(&mut *requests.lock().unwrap());
+        let slot = indexer.remove(0);
+        assert_eq!(
+            (slot.url.as_str(), json(&slot.body)["method"].as_str()),
+            (RPC_URL, Some("getSlot"))
+        );
+        assert!(!indexer.is_empty());
+        for request in indexer {
+            let method = json(&request.body)["method"].as_str().unwrap().to_string();
+            assert_eq!(request.method, "POST");
+            assert_eq!(
+                request.url,
+                format!("https://indexer.example/v1/spr/{method}?api-key=secret")
+            );
+            assert_eq!(request.headers, json_content_type());
+        }
+    }
+
+    #[test]
+    fn sends_the_sdk_request_as_it_is() {
+        let (transport, requests) = fake(|_| {
+            Ok(TransportResponse {
+                status: 200,
+                headers: HashMap::from([
+                    ("x-tee-encrypted".to_string(), "1".to_string()),
+                    ("bad header".to_string(), "dropped".to_string()),
+                ]),
+                body: b"{}".to_vec(),
+            })
+        });
+        let request = HttpRequest::post_json("https://indexer.example/m", b"{}".to_vec())
+            .with_header(
+                "x-request".parse().unwrap(),
+                reqwest::header::HeaderValue::from_static("1"),
+            )
+            .with_timeout(Duration::from_millis(2500));
+        let response = Sender(transport).send(request).unwrap();
+        assert_eq!(
+            (response.status.as_u16(), response.body.as_slice()),
+            (200, &b"{}"[..])
+        );
+        // The response headers reach the SDK, without any that are not HTTP.
+        assert_eq!(response.headers.len(), 1);
+        assert_eq!(response.headers["x-tee-encrypted"], "1");
+        let sent = requests.lock().unwrap().pop().unwrap();
+        assert_eq!(
+            (sent.method.as_str(), sent.url.as_str()),
+            ("POST", "https://indexer.example/m")
+        );
+        let mut headers = json_content_type();
+        headers.insert("x-request".into(), "1".into());
+        assert_eq!(sent.headers, headers);
+        assert_eq!(sent.body, b"{}");
+        // A second inside the SDK's bound, so the transport reports first.
+        assert_eq!(
+            (sent.max_response_bytes, sent.timeout_ms),
+            (None, Some(1500))
+        );
+        assert_eq!(
+            transport_deadline(Duration::from_secs(600)),
+            Duration::from_secs(599)
+        );
+        assert_eq!(
+            transport_deadline(Duration::from_millis(1200)),
+            Duration::from_millis(600)
+        );
+    }
+
+    #[test]
+    fn a_failure_after_the_status_is_a_lost_response() {
+        let send = |status| {
+            let (transport, _) = fake(move |_| {
+                Err(TransportFailure {
+                    message: "connection reset".to_string(),
+                    status,
+                })
+            });
+            Sender(transport).send(HttpRequest::get("https://prover.example/status"))
+        };
+        assert!(matches!(
+            send(Some(200)),
+            Err(ApiError::ResponseLost(error))
+                if error.to_string() == "transport failed after status 200: connection reset"
+        ));
+        assert!(matches!(
+            send(None),
+            Err(ApiError::HttpClient(error))
+                if error.to_string() == "transport failed: connection reset"
+        ));
+    }
+
+    #[test]
+    fn transport_failures_surface_without_secrets() {
+        // The package hands over the exception message, which can name the URL.
+        let (transport, _) = fake(|request| {
+            refused(format!(
+                "SocketException: connection refused ({})",
+                request.url
+            ))
+        });
+        let mut wallet = open(&Keypair::new(), transport);
+        for error in [
+            wallet.registration_status().unwrap_err(),
+            wallet.private_balance(None).unwrap_err(),
+        ] {
+            let WalletError::Client { message: error } = error else {
+                panic!("{error:?}");
+            };
+            assert!(
+                error.contains("transport failed: SocketException"),
+                "{error}"
+            );
+            assert!(error.contains("api-key=redacted"), "{error}");
+            assert!(!error.contains("secret"), "{error}");
+        }
+
+        let (transport, _) = fake(|_| {
+            Ok(TransportResponse {
+                status: 401,
+                headers: Default::default(),
+                body: b"unauthorized".to_vec(),
+            })
+        });
+        let mut wallet = open(&Keypair::new(), transport);
+        for error in [
+            wallet.registration_status().unwrap_err(),
+            wallet.private_balance(None).unwrap_err(),
+        ] {
+            let WalletError::Client { message: error } = error else {
+                panic!("{error:?}");
+            };
+            assert!(error.contains("401"), "{error}");
+            assert!(!error.contains("secret"), "{error}");
+        }
+    }
+}
+
+/// Refuse queue fallback before it can reach the application's HTTP stack.
+/// This also catches a jobId returned with HTTP 200 after TEE decryption.
+#[derive(Debug)]
+struct ProverSender {
+    sender: Sender,
+    sync_only: bool,
+}
+impl BlockingHttpClient for ProverSender {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, ApiError> {
+        if self.sync_only
+            && (request.headers.contains_key("x-async")
+                || (request.method == http::Method::GET
+                    && request
+                        .url
+                        .split('?')
+                        .next()
+                        .unwrap_or("")
+                        .ends_with("/status")))
+        {
+            // A local refusal must be an HTTP client error: upstream retries
+            // transport failures during polling. No request reaches the app.
+            // For TEE calls the absent encrypted response also fails closed.
+            return Ok(HttpResponse {
+                status: StatusCode::BAD_REQUEST,
+                headers: HeaderMap::new(),
+                body: b"synchronous-only prover: queue/status polling refused".to_vec(),
+            });
+        }
+        self.sender.send(request)
+    }
+}
+
+#[cfg(test)]
+mod proxy_tests {
+    use super::*;
+    use spr_client::prover::{ExpectedProvingKey, ProveRequest};
+    use spr_client::{prover::Delivery, Prover};
+    const POLICY: &str = include_str!("../tests/fixtures/tee-policy.json");
+
+    #[test]
+    fn signed_policy_uses_the_selected_network_without_proxy_credentials() {
+        for (network, name) in [
+            (ProverTeeNetwork::Mainnet, "mainnet"),
+            (ProverTeeNetwork::Devnet, "devnet"),
+        ] {
+            let (transport, requests) = tests::fake(|_| {
+                Ok(TransportResponse {
+                    status: 200,
+                    headers: HashMap::new(),
+                    body: POLICY.as_bytes().to_vec(),
+                })
+            });
+            let prover = transport
+                .configured_prover(
+                    "https://proxy.example/v1/spr?api-key=secret".into(),
+                    true,
+                    None,
+                    Some(network),
+                    false,
+                )
+                .unwrap();
+            assert!(prover.has_tee());
+            // An unsigned policy must fail before attestation or a proof request.
+            assert!(prover.prove(&Merge).is_err());
+            let requests = requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "GET");
+            assert_eq!(
+                requests[0].url,
+                format!("https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/{name}.json")
+            );
+            assert!(requests[0].body.is_empty());
+        }
+    }
+
+    #[test]
+    fn conflicting_policies_fail_before_http() {
+        let (transport, requests) = tests::fake(|_| panic!("conflicting policies sent HTTP"));
+        assert!(transport
+            .configured_prover(
+                "https://proxy.example/v1/spr".into(),
+                true,
+                Some(POLICY),
+                Some(ProverTeeNetwork::Devnet),
+                false,
+            )
+            .is_err());
+        assert!(requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_missing_policy_fails_before_any_http() {
+        for url in [
+            "https://dd73hh473h6ha.cloudfront.net",
+            "https://d3ky2kt0ntqxt1.cloudfront.net",
+            "https://api.example/v1/spr?api-key=secret",
+            "https://proxy.example/zolana",
+            "http://localhost:1234/v1/spr",
+        ] {
+            let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
+            assert!(matches!(
+                transport.configured_prover(url.into(), true, None, None, false),
+                Err(WalletError::ProverPolicyMissing)
+            ));
+            assert!(requests.lock().unwrap().is_empty());
+        }
+        // false only exempts loopback; it never permits an unpinned remote.
+        let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
+        assert!(matches!(
+            transport.configured_prover("https://prover.example".into(), false, None, None, false),
+            Err(WalletError::ProverPolicyMissing)
+        ));
+        assert!(requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn supplied_policy_attests_through_direct_unified_and_proxy_urls() {
+        for url in [
+            "https://prover.example",
+            "https://api.example/v1/spr?api-key=secret",
+            "https://proxy.example/zolana",
+            "http://localhost:1234/v1/spr",
+        ] {
+            let (transport, requests) = tests::fake(|_| {
+                Ok(TransportResponse {
+                    status: 404,
+                    headers: HashMap::new(),
+                    body: b"no attestation".to_vec(),
+                })
+            });
+            let prover = transport
+                .configured_prover(url.into(), false, Some(POLICY), None, false)
+                .unwrap();
+            assert!(prover.prove(&Merge).is_err());
+            let requests = requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            let sent = reqwest::Url::parse(&requests[0].url).unwrap();
+            let base = reqwest::Url::parse(url).unwrap();
+            assert_eq!(sent.origin(), base.origin());
+            assert_eq!(
+                sent.path(),
+                format!("{}/attestation", base.path().trim_end_matches('/'))
+            );
+            assert_eq!(
+                sent.query_pairs().find(|(key, _)| key == "api-key"),
+                base.query_pairs().find(|(key, _)| key == "api-key")
+            );
+            assert!(requests[0].body.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_malformed_supplied_policy_fails_before_http() {
+        let (transport, requests) = tests::fake(|_| panic!("bad policy sent HTTP"));
+        for policy in ["{}", "null", r#"{"deployment":null}"#] {
+            assert!(transport
+                .configured_prover(
+                    "https://prover.example".into(),
+                    false,
+                    Some(policy),
+                    None,
+                    false
+                )
+                .is_err());
+        }
+        assert!(requests.lock().unwrap().is_empty());
+    }
+    struct Merge;
+    impl ProveRequest for Merge {
+        fn body(&self) -> Result<zeroize::Zeroizing<String>, spr_client::ClientError> {
+            Ok("{}".to_owned().into())
+        }
+        fn proving_key(&self) -> Result<ExpectedProvingKey, spr_client::ClientError> {
+            Ok(ExpectedProvingKey {
+                name: "merge_8_1.key".into(),
+                sha256: [0; 32],
+            })
+        }
+        fn delivery(&self) -> Delivery {
+            Delivery::InResponse
+        }
+    }
+    #[test]
+    fn queued_result_never_reaches_status_route_in_sync_only_mode() {
+        for status in [200, 202] {
+            let (transport, requests) = tests::fake(move |_| {
+                Ok(TransportResponse {
+                    status,
+                    headers: HashMap::new(),
+                    body: br#"{"jobId":"queued"}"#.to_vec(),
+                })
+            });
+            let client = transport
+                .configured_prover(
+                    "http://localhost:1234/v1/spr".into(),
+                    false,
+                    None,
+                    None,
+                    true,
+                )
+                .unwrap();
+            assert!(client.prove(&Merge).is_err());
+            let requests = requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "POST");
+            assert!(requests[0].url.ends_with("/v1/spr/prove/merge_8_1"));
+        }
+    }
+    #[test]
+    fn localhost_proxy_can_require_pinned_attestation() {
+        let (transport, requests) = tests::fake(|_| {
+            Ok(TransportResponse {
+                status: 404,
+                headers: HashMap::new(),
+                body: b"missing".to_vec(),
+            })
+        });
+        let client = transport
+            .configured_prover(
+                "http://localhost:1234/v1/spr".into(),
+                true,
+                Some(POLICY),
+                None,
+                true,
+            )
+            .unwrap();
+        assert!(client.has_tee());
+        assert!(client.prove(&Merge).is_err());
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].url.contains("/attestation?nonce="));
+    }
+}
