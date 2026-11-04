@@ -51,14 +51,14 @@ solana-address = "=2.6.1"
 solana-pubkey = "=4.2.0"
 solana-signature = "=3.4.1"
 wincode = "=0.5.5"
-zolana-hasher = { package = "spr-hasher", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb", features = ["std"] }
-zolana-interface = { package = "spr-interface", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb", features = ["borsh"] }
-zolana-keypair = { package = "spr-keypair", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb" }
-zolana-program = { package = "spr-program", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb" }
-zolana-api = { package = "spr-api", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb" }
-zolana-client = { package = "spr-client", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb", features = ["client"] }
-zolana-transaction = { package = "spr-transaction", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb" }
-zolana-user-registry-interface = { package = "spr-user-registry-interface", git = "https://github.com/helius-labs/zolana", rev = "c4062d3860965855e47268f61b01a27e774096eb" }
+zolana-hasher = { package = "spr-hasher", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a", features = ["std"] }
+zolana-interface = { package = "spr-interface", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a", features = ["borsh"] }
+zolana-keypair = { package = "spr-keypair", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a" }
+zolana-program = { package = "spr-program", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a" }
+zolana-api = { package = "spr-api", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a" }
+zolana-client = { package = "spr-client", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a", features = ["client"] }
+zolana-transaction = { package = "spr-transaction", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a" }
+zolana-user-registry-interface = { package = "spr-user-registry-interface", git = "https://github.com/helius-labs/zolana", rev = "356cb7750dc24bc7ef6dd916fd42204baf411c0a" }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 zopro-zolana = { git = "https://github.com/helius-labs/zk-tools.git", rev = "10c0f562bcec1899945d16beec41635ccd89a766", features = ["metal"] }

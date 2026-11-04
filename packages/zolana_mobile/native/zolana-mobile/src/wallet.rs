@@ -47,8 +47,8 @@ use zolana_client::{
         try_resolve_registered_address,
     },
     ClientError, ComputeBudgetConfig, IndexerPollConfig, IndexerRpcConfig, MergeSubmission,
-    ProverClient, Rpc, SignedPrivateTransaction, SolanaRpc, Submission, UnsignedMessage, UtxoScan,
-    UtxoScanResult, ZolanaClient,
+    ProverClient, Rpc, SignedPrivateTransaction, SolanaRpc, SprClient, Submission, UnsignedMessage,
+    UtxoScan, UtxoScanResult,
 };
 use zolana_interface::{pda, state::ProtocolConfig, MAX_INPUT_TREES, PROGRAM_ID_PUBKEY};
 use zolana_keypair::{derivation, Curve, NullifierKey, PublicKey, ShieldedAddress, ViewingKey};
@@ -587,7 +587,7 @@ pub struct MobileWallet {
     /// The SDK's prover client of [`WalletConfig::prover_url`].
     remote_prover: Option<Arc<ProverClient>>,
     /// Proves nothing itself: each spend names its prover.
-    client: ZolanaClient<SolanaRpc>,
+    client: SprClient<SolanaRpc>,
 }
 
 impl MobileWallet {
@@ -684,7 +684,7 @@ impl MobileWallet {
         // With its own prover, the client fetches every Merkle proof from the
         // indexer itself: the wallet's provers prove only complete witnesses.
         let recovery_domain = format!("{}\n{}", config.rpc_url, config.indexer_url);
-        let client = ZolanaClient::with_prover(
+        let client = SprClient::with_prover(
             transport.solana_rpc(config.rpc_url)?,
             transport.indexer(&config.indexer_url),
             native_prover.clone(),
@@ -1879,7 +1879,7 @@ const SEND_LOOKUP: IndexerPollConfig = IndexerPollConfig {
 /// Recover from RPC history or a confirmed indexed event. Missing history
 /// cannot establish that a transaction never landed, even after expiry.
 fn reconcile(
-    client: &ZolanaClient<SolanaRpc>,
+    client: &SprClient<SolanaRpc>,
     signature: Signature,
     last_valid_block_height: Option<u64>,
     poll: IndexerPollConfig,
@@ -1938,7 +1938,7 @@ fn reconcile(
 /// Confirmation is already established. Wait only for the indexed notes;
 /// checking the recent RPC cache again would lose historical successes.
 fn wait_for_indexer(
-    client: &ZolanaClient<SolanaRpc>,
+    client: &SprClient<SolanaRpc>,
     signature: Signature,
     poll: IndexerPollConfig,
 ) -> Result<(), WalletError> {
@@ -2379,14 +2379,19 @@ mod tests {
     #[test]
     fn notes_are_read_once_the_indexer_has_the_rpcs_slot() {
         let signer = Keypair::new();
+        // Photon refuses a read whose minContextSlot it has not reached.
         let at_slot = |indexed: u64| {
             move |method: &str| match method {
                 "getSlot" => serde_json::json!({"result": 100}),
+                _ if indexed < 100 => serde_json::json!({"error": {
+                    "code": -32016,
+                    "message": "Minimum context slot has not been reached",
+                    "data": {"contextSlot": indexed},
+                }}),
                 _ => serde_json::json!({"result": {
                     "context": {"blockTime": 0, "slot": indexed},
-                    "transactions": [],
-                    "matches": [],
-                    "nextCursor": null,
+                    "data": [],
+                    "paginationToken": null,
                 }}),
             }
         };
@@ -2675,9 +2680,8 @@ mod tests {
             "getBlockHeight" => serde_json::json!({"result": 5}),
             _ => serde_json::json!({"result": {
                 "context": {"blockTime": 0, "slot": 100},
-                "transactions": [],
-                "matches": [],
-                "nextCursor": null,
+                "data": [],
+                "paginationToken": null,
             }}),
         };
         let tag_reads = |asked: &Arc<Mutex<Vec<String>>>| {

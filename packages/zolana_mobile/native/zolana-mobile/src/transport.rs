@@ -12,8 +12,8 @@ use solana_rpc_client::{
     http_sender::HttpSender,
     rpc_client::{RpcClient, RpcClientConfig},
 };
-use zolana_api::{ApiError, BlockingHttpClient, BlockingZolanaApi, HttpRequest, HttpResponse};
-use zolana_client::{ProverClient, SolanaRpc, ZolanaIndexer};
+use zolana_api::{ApiError, BlockingHttpClient, BlockingSprApi, HttpRequest, HttpResponse};
+use zolana_client::{ProverClient, SolanaRpc, SprIndexer};
 
 use crate::error::WalletError;
 
@@ -137,8 +137,8 @@ impl Transport {
     }
 
     /// The indexer client of `url`, through this transport.
-    pub(crate) fn indexer(&self, url: &str) -> ZolanaIndexer {
-        ZolanaIndexer::with_api(BlockingZolanaApi::with_client(url, Sender(self.clone())))
+    pub(crate) fn indexer(&self, url: &str) -> SprIndexer {
+        SprIndexer::with_api(BlockingSprApi::with_client(url, Sender(self.clone())))
     }
 
     /// The SDK's prover client of the prover at `url`, through this transport.
@@ -428,7 +428,7 @@ pub(crate) mod tests {
                 } else if request.url == RPC_URL {
                     r#"{"jsonrpc":"2.0","id":0,"result":{"context":{"slot":1},"value":null}}"#
                 } else {
-                    r#"{"jsonrpc":"2.0","id":"test-account","result":{"context":{"blockTime":0,"slot":1},"matches":[],"transactions":[],"nextCursor":null}}"#
+                    r#"{"jsonrpc":"2.0","id":"test-account","result":{"context":{"blockTime":0,"slot":1},"data":[],"paginationToken":null}}"#
                 },
             )
         });
