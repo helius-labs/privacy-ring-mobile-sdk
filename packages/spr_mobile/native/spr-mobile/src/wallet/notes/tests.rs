@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     error::WalletError,
     wallet::{
-        tests::{note, open, unsigned},
+        tests::{cluster_wallet, config, note, open, unsigned, GENESIS},
         util::nullifiers,
     },
 };
@@ -163,13 +163,13 @@ fn saved_order_survives_new_notes_rescans_and_wallet_restart() {
 #[test]
 fn restored_reservations_exclude_planned_inputs_until_reconciled() {
     let signer = Keypair::new();
-    let wallet = open(&signer).unwrap();
+    let (wallet, _) = cluster_wallet(&signer, config(), GENESIS);
     let notes = [owned(&wallet, 5, 1), owned(&wallet, 8, 2)];
     let pending = wallet
         .reserve_until(unsigned(&signer), nullifiers(&notes), u64::MAX)
         .unwrap();
     let snapshot = wallet.export_prepared_transaction(&pending).unwrap();
-    let reopened = open(&signer).unwrap();
+    let (reopened, _) = cluster_wallet(&signer, config(), GENESIS);
     let restored = reopened.restore_prepared_transaction(snapshot).unwrap();
     let held: HashSet<_> = reopened
         .reservations()
