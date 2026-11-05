@@ -5,7 +5,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-package="$repo_root/packages/zolana_mobile"
+package="$repo_root/packages/spr_mobile"
 build_tool="$package/cargokit/build_tool"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT

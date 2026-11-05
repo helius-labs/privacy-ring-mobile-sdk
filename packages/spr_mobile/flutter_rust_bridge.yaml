@@ -1,0 +1,5 @@
+rust_input: crate::api,spr-mobile
+rust_root: rust/
+dart_output: lib/src/rust
+auto_upgrade_dependency: false
+deps_check: false

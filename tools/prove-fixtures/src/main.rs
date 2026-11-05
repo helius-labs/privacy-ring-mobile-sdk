@@ -14,15 +14,15 @@ use std::{env, fs, path::PathBuf, process, sync::Mutex};
 use num_bigint::BigUint;
 use solana_address::Address;
 use solana_signature::Signature;
-use zolana_client::{
+use spr_client::{
     assemble, ClientError, MergeProver, MerkleContext, MerkleProof, NonInclusionProof, Proof,
     ProveRequest, Prover, ProverExt, SpendProof, NULLIFIER_TREE_HEIGHT, STATE_TREE_HEIGHT,
 };
-use zolana_hasher::Poseidon;
-use zolana_interface::pda;
-use zolana_keypair::ShieldedKeypair;
-use zolana_merkle_tree::{indexed::IndexedMerkleTree, MerkleTree};
-use zolana_transaction::{
+use spr_hasher::Poseidon;
+use spr_interface::pda;
+use spr_keypair::ShieldedKeypair;
+use spr_merkle_tree::{indexed::IndexedMerkleTree, MerkleTree};
+use spr_transaction::{
     instructions::{
         merge::MergeTransaction,
         transact::{canonical_shape, ConfidentialTransaction, BN254_MODULUS_DEC},

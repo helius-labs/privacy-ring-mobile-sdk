@@ -1,6 +1,6 @@
 # Zolana Mobile SDK
 
-A Flutter SDK for private Zolana payments on Android and iOS. `ZolanaWallet`
+A Flutter SDK for private Zolana payments on Android and iOS. `SprWallet`
 registers, shields, sends privately and unshields, building every
 transaction with the Zolana Rust client and proving it on the device with
 zopro, a Groth16 prover in Rust for gnark's keys (on the GPU where there is
@@ -16,21 +16,21 @@ remote prover URLs with a reviewed TEE policy.
 Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
 or a reviewed static `proverTeePolicy`. Missing policy fails before HTTP.
 Deployment endpoints are configured by the application.
-See [SDK configuration](packages/zolana_mobile/README.md). Earlier programs'
+See [SDK configuration](packages/spr_mobile/README.md). Earlier programs'
 notes and pending transactions require their matching SDK and deployment.
 
 ## Layout
 
-- `packages/zolana_mobile/native/zolana-mobile`: the native wallet, the
+- `packages/spr_mobile/native/spr-mobile`: the native wallet, the
   on-device prover and the proving-key store.
-- `packages/zolana_mobile`: the Flutter plugin, and an example devnet wallet.
+- `packages/spr_mobile`: the Flutter plugin, and an example devnet wallet.
 - `fixtures`: a 2→2 `/prove` request built with the Zolana prover's test
   helpers, and the Helius prover's response to it.
 - `scripts`: asset staging.
 
 The generated native library keeps Mopro's internal
 `mopro_flutter_bindings` stem. Applications import the public Dart package as
-`package:zolana_mobile/zolana_mobile.dart`.
+`package:spr_mobile/spr_mobile.dart`.
 
 ## Demo
 
@@ -49,7 +49,7 @@ Install Flutter and the platform toolchain. Then:
 
 ```sh
 ./scripts/stage-demo-assets.sh   # the proof benchmark's 2→2 key
-cd packages/zolana_mobile/example
+cd packages/spr_mobile/example
 flutter pub get
 flutter run --release -d YOUR_DEVICE_ID --dart-define=ZOLANA_API_KEY=...
 ```
@@ -83,7 +83,7 @@ The wallet itself downloads the zopro key of each shape on demand.
 
 ```sh
 cargo test --workspace
-cd packages/zolana_mobile
+cd packages/spr_mobile
 flutter pub get
 flutter analyze
 flutter test
@@ -95,7 +95,7 @@ flutter analyze
 After staging assets, run the real proof test with:
 
 ```sh
-cargo test -p zolana-mobile proves_the_staged_request -- --ignored
+cargo test -p spr-mobile proves_the_staged_request -- --ignored
 ```
 
 ## Rust dependencies
@@ -104,16 +104,16 @@ The Flutter-facing crate pins `mopro-ffi` to `sergeytimoshin/mopro` revision
 `c1071f96fa5a28dca8e567dd3944331047450a2b`. The prover is `zopro-prover`: the
 request to the circuit's inputs, the arithmetic, and the proof verified and
 encoded as gnark's verifier reads it; gnark itself runs only offline, where
-the circuits are compiled and the keys made. Protocol crates `zolana-hasher`,
-`zolana-keypair`, and `zolana-transaction` are pinned to one Zolana revision,
+the circuits are compiled and the keys made. Protocol crates `spr-hasher`,
+`spr-keypair`, and `spr-transaction` are pinned to one Zolana revision,
 which must be on Zolana `main`.
 
 ## Precompiled binaries
 
 The `Precompiled binaries` workflow runs on every push to `main`:
 
-1. It computes the crate hash of `packages/zolana_mobile/rust` and its path
-   dependency `native/zolana-mobile`.
+1. It computes the crate hash of `packages/spr_mobile/rust` and its path
+   dependency `native/spr-mobile`.
 2. It builds the library for Android (`aarch64`, `armv7`, `x86_64`) and iOS
    (device, `arm64` and `x86_64` simulator).
 3. It signs every file and uploads it to the release `precompiled_<hash>`.
@@ -122,14 +122,14 @@ The `Precompiled binaries` workflow runs on every push to `main`:
    uploaded files only.
 
 The signing key is the repository secret `CARGOKIT_PRIVATE_KEY`, 64 bytes as
-hex. Its public key is pinned in `packages/zolana_mobile/rust/cargokit.yaml`. To
+hex. Its public key is pinned in `packages/spr_mobile/rust/cargokit.yaml`. To
 rotate the key, run `dart run build_tool gen-key` in
-`packages/zolana_mobile/cargokit/build_tool`, then replace the secret and the
+`packages/spr_mobile/cargokit/build_tool`, then replace the secret and the
 public key together. Releases signed with the old key stop verifying.
 
 ## Wallet implementation
 
-[`wallet.rs`](packages/zolana_mobile/native/zolana-mobile/src/wallet.rs) holds
+[`wallet.rs`](packages/spr_mobile/native/spr-mobile/src/wallet.rs) holds
 the wallet state and public re-exports.
 Its modules separate account setup, balances, note descriptions, deposits,
 spends, merges, cache run policy, prepared snapshots, submission, activity
@@ -143,7 +143,7 @@ primitives.
 
 ## Current boundary
 
-`ZolanaWallet` builds and proves transactions; the application signs them, and
+`SprWallet` builds and proves transactions; the application signs them, and
 either the wallet or the application sends them. `LocalProver.prove`
 remains for callers that assemble their own `/prove` requests. The wallet holds
 SOL and the SPL tokens the shielded pool has registered, keeps its state in
@@ -166,12 +166,12 @@ ZOLANA_E2E_TEE_NETWORK=devnet \
 ZOLANA_E2E_SENDER_SEED=a0a60f24c56c18101be405cc2ddb750d88961c1ee781bd17cd174fe1f5ff55dd \
 ZOLANA_E2E_RECIPIENT_SEED=7138835c906af341f4eec548684b5204d5b617b19573a0dd758050982601bb67 \
 ZOLANA_E2E_MINT=Y8FDajuDMQWu7d5ES3jbZ67NzZta266WuFgQ92N4yd6 \
-cargo test -p zolana-mobile --release --test wallet_flow -- --ignored --nocapture --test-threads 1
+cargo test -p spr-mobile --release --test wallet_flow -- --ignored --nocapture --test-threads 1
 ```
 
 A local cluster started by `just` in the zolana repository works as well.
 
-See `packages/zolana_mobile/README.md` for the ownership, lock/discard, completion,
+See `packages/spr_mobile/README.md` for the ownership, lock/discard, completion,
 and prepared-key lifetime contract. Closing drains work; it does not promise
 instant native cancellation or secure erasure of all Dart copies.
 
