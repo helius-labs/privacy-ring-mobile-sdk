@@ -1591,16 +1591,16 @@ sealed class WalletError with _$WalletError implements FrbException {
   /// The device prover could not prove the request.
   const factory WalletError.proofFailed() = WalletError_ProofFailed;
 
-  /// Another proof is running, or a `LocalProver` holds the prepared slot.
+  /// Another proof is running, or a `LocalProver` holds the loaded key.
   const factory WalletError.proverBusy() = WalletError_ProverBusy;
 
-  /// The prepared prover was released.
+  /// The `LocalProver` was closed.
   const factory WalletError.proverClosed() = WalletError_ProverClosed;
 
   /// The prover state of this process is unusable.
   const factory WalletError.proverUnavailable() = WalletError_ProverUnavailable;
 
-  /// The proving key could not be loaded into gnark.
+  /// The proving key could not be loaded into zopro.
   const factory WalletError.proverLoadFailed() = WalletError_ProverLoadFailed;
 
   /// The prepared circuit's shape is not one the wallet proves.

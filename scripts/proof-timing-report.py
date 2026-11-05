@@ -10,9 +10,10 @@ DIR holds a directory per phone, `<label>/`, with its timing logs (`*.log`)
 and, in CI, `baseline.json`: the phone's last entry in the history of `main`
 (`{"commit", "date", "report"}`). The script writes `<label>/report.json`
 and prints the report: the proof time by phone, then each phone's tables.
-In those, rows are the four scenarios of the client's table and then the
-stages; columns are the shapes, transfers (`8x2`) and then merges
-(`merge-24x1`); a scenario cell is the total, with the download in brackets
+In those, rows are the four scenarios (first run with the download, warm,
+first run after a restart, repeated after it) and then the stages; columns
+are the shapes, transfers (`8x2`) and then merges (`merge-24x1`); a scenario
+cell is the total, with the download in brackets
 when there was one, or `failed`. With a baseline, each row comes twice,
 `before` (the baseline) and `after` (these logs) with the change, and a
 change past --flag percent is marked; --after names this commit.

@@ -690,7 +690,7 @@ mod tests {
     /// Proves every `fixtures/prove-request-<n>x<m>.json` with its pinned
     /// key through [`crate::ProvingKeys::prove`]. The keys must be in
     /// `ZOLANA_TEST_KEY_DIR` (or a temp directory) already, the widest of
-    /// them 180 MB: this transport downloads nothing.
+    /// them 306 MB: this transport downloads nothing.
     #[test]
     #[ignore = "needs the proving keys of every fixture"]
     fn proves_every_fixture_with_its_pinned_key() {

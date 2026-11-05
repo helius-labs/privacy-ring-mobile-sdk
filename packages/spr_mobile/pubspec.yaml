@@ -1,5 +1,5 @@
 name: spr_mobile
-description: "Flutter SDK for Zolana proof-input primitives, Poseidon hashing, and local Groth16 proving."
+description: "A private Solana Privacy Rings (SPR) wallet for Flutter that builds and proves private payments on the device."
 version: 0.1.0
 homepage: https://github.com/helius-labs/zolana-mobile-sdk
 

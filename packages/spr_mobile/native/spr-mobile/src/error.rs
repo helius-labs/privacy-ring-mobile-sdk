@@ -101,13 +101,13 @@ pub enum WalletError {
     ProofInvalid,
     /// The device prover could not prove the request.
     ProofFailed,
-    /// Another proof is running, or a `LocalProver` holds the prepared slot.
+    /// Another proof is running, or a `LocalProver` holds the loaded key.
     ProverBusy,
-    /// The prepared prover was released.
+    /// The `LocalProver` was closed.
     ProverClosed,
     /// The prover state of this process is unusable.
     ProverUnavailable,
-    /// The proving key could not be loaded into gnark.
+    /// The proving key could not be loaded into zopro.
     ProverLoadFailed,
     /// The prepared circuit's shape is not one the wallet proves.
     UnsupportedCircuit,

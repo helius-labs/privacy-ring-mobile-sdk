@@ -1,4 +1,4 @@
-# Zolana mobile demo
+# SPR mobile demo
 
 The wallet proves transfers and withdrawals locally with at most eight input
 notes (`WalletConfig.maxSpendInputs: 8`). If an amount plus its app fee needs
@@ -27,7 +27,7 @@ From the repository root:
 ```sh
 ./scripts/stage-demo-assets.sh
 cd packages/spr_mobile/example
-flutter run --release -d YOUR_DEVICE_ID
+flutter run --release -d YOUR_DEVICE_ID --dart-define=ZOLANA_API_KEY=...
 ```
 
 The proving key is large and ignored by Git. The staging script downloads one
@@ -41,9 +41,7 @@ handling, not wallet authentication. No private witness is written to disk.
 ## Remote prover policy
 
 The app and its live tests select `ProverTeeNetwork.devnet` through
-`lib/prover_policy.dart`. The SDK verifies and refreshes the signed policy using
-its pinned signing keys. Changing URLs, including a localhost proxy, retains
-this network selection. Supply `--dart-define=ZOLANA_TEE_POLICY=...` with complete
-reviewed static policy JSON for a custom deployment; this disables the signed
-policy selection, and the app must keep that override current. Local proving
-can omit the remote prover URL and policy entirely.
+`lib/prover_policy.dart`, also when the URLs change, a localhost proxy
+included. `--dart-define=ZOLANA_TEE_POLICY=...` supplies complete reviewed
+static policy JSON for a custom deployment instead. The SDK's
+[TEE policy](../README.md#tee-policy) section describes both.
