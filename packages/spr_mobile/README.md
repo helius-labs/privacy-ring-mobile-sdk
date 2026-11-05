@@ -1116,10 +1116,10 @@ flutter pub get
 flutter run --release -d YOUR_DEVICE_ID --dart-define=ZOLANA_API_KEY=...
 ```
 
-`ZOLANA_API_KEY` is a Helius key: the example reaches Solana devnet RPC through
-Helius with it, and Zolana's devnet-e indexer and prover without it. It is
-compiled into that build only; never commit it.
-Alternatively, set `ZOLANA_RPC_URL` to your Solana devnet RPC.
+`ZOLANA_API_KEY` is a Helius key: the example reaches devnet-e's Solana RPC,
+indexer and prover through the Helius gateway with it. It is compiled into
+that build only; never commit it.
+`ZOLANA_RPC_URL` and `ZOLANA_INDEXER_URL` replace the RPC and the indexer.
 
 ### From Xcode
 

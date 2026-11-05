@@ -11,11 +11,12 @@ public SOL pays network fees. Close the sheet to refresh balances and history,
 then retry the payment. Repeat merges if needed. Turn **Allow merges** off to
 opt out on chain. Merges appear in history as self transfers.
 
-Build the wallet with `--dart-define=ZOLANA_API_KEY=...` for the devnet RPC,
-or supply a Solana devnet RPC with `--dart-define=ZOLANA_RPC_URL=...`.
-The Network menu includes the TEE prover URL, which defaults to
-`https://dd73hh473h6ha.cloudfront.net`. Transfers continue using local proving;
-only the merge action requests `Proving.remote`.
+Build the wallet with `--dart-define=ZOLANA_API_KEY=...`, a Helius key: the
+demo reaches devnet-e's Solana RPC, indexer and TEE prover through the Helius
+gateway (`lib/network.dart`). `--dart-define=ZOLANA_RPC_URL=...` and
+`--dart-define=ZOLANA_INDEXER_URL=...` replace the RPC and the indexer, and the
+Network menu edits all three. Transfers continue using local proving; only the
+merge action requests `Proving.remote`.
 
 The **Proof benchmark** screen also generates and verifies a Groth16 proof on the device with zopro, from
 a public structured Zolana 2→2 request fixture. It loads the key once per
@@ -41,8 +42,8 @@ handling, not wallet authentication. No private witness is written to disk.
 ## Remote prover policy
 
 The app and its live tests select `ProverTeeNetwork.devnet` through
-`lib/prover_policy.dart`. The SDK verifies and refreshes the signed policy using
-its pinned signing keys. Changing URLs, including a localhost proxy, retains
+`demoConfig` in `lib/network.dart`. The SDK verifies and refreshes the signed
+policy using its pinned signing keys. Changing URLs, including a localhost proxy, retains
 this network selection. Supply `--dart-define=ZOLANA_TEE_POLICY=...` with complete
 reviewed static policy JSON for a custom deployment; this disables the signed
 policy selection, and the app must keep that override current. Local proving

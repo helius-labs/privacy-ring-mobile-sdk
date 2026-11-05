@@ -5607,6 +5607,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "spr-example-backend"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "hex",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "solana-keypair",
+ "solana-message",
+ "solana-pubkey 4.2.0",
+ "solana-signature",
+ "solana-signer",
+ "solana-transaction",
+ "spr-client",
+ "spr-interface",
+ "spr-mobile",
+ "spr-program",
+ "spr-prover-tee",
+ "spr-user-registry-interface",
+ "subtle",
+ "tokio",
+ "wincode",
+]
+
+[[package]]
 name = "spr-hasher"
 version = "0.8.0"
 source = "git+https://github.com/helius-labs/zolana?rev=c5297afa13e8bfb6edadf6408304ef3fc2f8c676#c5297afa13e8bfb6edadf6408304ef3fc2f8c676"
@@ -7073,34 +7101,6 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[package]]
-name = "zolana-example-backend"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "hex",
- "rand 0.8.8",
- "reqwest",
- "serde",
- "serde_json",
- "solana-keypair",
- "solana-message",
- "solana-pubkey 4.2.0",
- "solana-signature",
- "solana-signer",
- "solana-transaction",
- "spr-client",
- "spr-interface",
- "spr-mobile",
- "spr-program",
- "spr-prover-tee",
- "spr-user-registry-interface",
- "subtle",
- "tokio",
- "wincode",
-]
 
 [[package]]
 name = "zopro-bn254"

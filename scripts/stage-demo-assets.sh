@@ -7,12 +7,14 @@ set -euo pipefail
 # lockfile.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 asset_dir="$repo_root/packages/spr_mobile/example/assets/proving"
-key_name="transfer_confidential_2_2.zopro"
-# The lockfile's prefix; its last part names the key set's directory, as the
-# wallet lays out its key directory.
-key_prefix="proving-keys/78751f5d1c591777/"
+lockfile="$repo_root/packages/spr_mobile/native/spr-mobile/zopro-keys.lock"
+lock() { jq -er "$1" "$lockfile"; }
+key_prefix="$(lock .prefix)"
+key_name="$(lock '.keys["transfer_confidential_2_2.key"].file')"
+key_checksum="$(lock '.keys["transfer_confidential_2_2.key"].sha256')"
+# The prefix's last part names the key set's directory, as the wallet lays out
+# its key directory.
 key="$repo_root/.cache/proving/$(basename "$key_prefix")/$key_name"
-key_checksum="4687bf25f01c6a26d3e1f6e6ea2dc9935e6b9751f935b54927292d1808e839b9"
 request_checksum="38f39f6ac8c23d4d74105bf9dd743213a94470cc46219667d67fd67db1941df3"
 
 sha256() {
@@ -38,9 +40,13 @@ if [[ ! -f "$key" ]] || [[ "$(sha256 "$key")" != "$key_checksum" ]]; then
   if [[ -n "${ZOPRO_KEYS_DIR:-}" ]]; then
     cp "$ZOPRO_KEYS_DIR/$key_name" "$temporary_key"
   else
-    base_url="${ZOLANA_PROVING_KEYS_URL:-https://d3gbdb0egjwcw9.cloudfront.net}"
+    if [[ -n "${ZOLANA_PROVING_KEYS_URL:-}" ]]; then
+      key_url="$ZOLANA_PROVING_KEYS_URL/$key_prefix/$key_name"
+    else
+      key_url="$(lock .baseUrl)$key_name"
+    fi
     echo "downloading $key_name"
-    curl -fsSL "$base_url/$key_prefix$key_name" -o "$temporary_key"
+    curl -fsSL "$key_url" -o "$temporary_key"
   fi
   if [[ "$(sha256 "$temporary_key")" != "$key_checksum" ]]; then
     echo "the proving key's checksum does not match the lockfile" >&2

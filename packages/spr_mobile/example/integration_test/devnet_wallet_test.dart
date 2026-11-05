@@ -8,10 +8,9 @@ import 'package:zolana_mobile_demo/demo_assets.dart';
 import 'package:zolana_mobile_demo/demo_keys.dart';
 import 'package:zolana_mobile_demo/demo_signer.dart';
 import 'package:zolana_mobile_demo/merge_sheet.dart';
-import 'package:zolana_mobile_demo/prover_policy.dart';
+import 'package:zolana_mobile_demo/network.dart';
 import 'package:zolana_mobile_demo/test_cluster_rpc.dart';
 import 'package:zolana_mobile_demo/spend_checks.dart';
-import 'package:zolana_mobile_demo/wallet_screen.dart' show Network;
 
 /// Private sends from demo account A to B on Zolana devnet: one proved on the
 /// device or simulator running the test, with the demo's fee paid to its
@@ -19,10 +18,10 @@ import 'package:zolana_mobile_demo/wallet_screen.dart' show Network;
 /// from its exported keys and the spend signed by the test after a blockhash
 /// refresh, as an application that signs itself does; one proved remotely by
 /// the Helius prover, asked through the transport. In both, A sends every request
-/// through the application's own transport (`package:http`, logged), as an
-/// application with its own networking does; B uses the package's default
-/// transport. Then B merges its notes twice, proved remotely and on the
-/// device, and the demo token is shielded, sent and unshielded. Opt in,
+/// through the application's own transport (the package's `HttpTransport`
+/// behind a log), as an application with its own networking does; B uses the
+/// package's default transport. Then B merges its notes twice, proved remotely
+/// and on the device, and the demo token is shielded, sent and unshielded. Opt in,
 /// since it spends devnet SOL and needs A funded and a Helius key for
 /// devnet:
 ///
@@ -37,25 +36,23 @@ const _enabled = bool.fromEnvironment('ZOLANA_E2E');
 const _apiKey = String.fromEnvironment('ZOLANA_API_KEY');
 const _proverUrl = String.fromEnvironment('ZOLANA_E2E_PROVER_URL');
 
-/// devnet-e's attested prover, directly until the Helius gateway serves
-/// devnet-e.
-const _deploymentProver = 'https://dd73hh473h6ha.cloudfront.net';
+/// The attested prover the remote proofs ask.
+final _prover = _proverUrl.isEmpty ? Network.devnet.proverUrl : _proverUrl;
+
+/// The [AppTransport.sent] entry of [method] [route] below [_prover].
+String _proverRoute(String method, String route) =>
+    '$method ${Uri.parse(_prover).path}$route';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(initSprMobile);
 
-  Future<WalletConfig> config({String? proverUrl}) async => WalletConfig(
-    rpcUrl: Network.devnet.rpcUrl,
-    indexerUrl: Network.devnet.indexerUrl,
+  Future<WalletConfig> config({String? proverUrl}) async => demoConfig(
     provingKeyDir:
         '${(await getApplicationSupportDirectory()).path}/proving-keys',
-    maxSpendInputs: 8,
     proverUrl: proverUrl,
-    proverTeePolicy: proverUrl == null ? null : demoProverPolicy,
-    proverTeeNetwork: proverUrl == null ? null : demoProverNetwork,
-    mints: [for (final asset in demoAssets) ?asset.config],
+    maxSpendInputs: 8,
   );
 
   final signers = <SprWallet, DemoSigner>{};
@@ -274,10 +271,7 @@ void main() {
       throwsA(const WalletError.remoteProverMissing()),
     );
     await local.close();
-    // By default the deployment's attested prover.
-    final remote = await sender(
-      proverUrl: _proverUrl.isEmpty ? _deploymentProver : _proverUrl,
-    );
+    final remote = await sender(proverUrl: _prover);
     addTearDown(remote.close);
     final recipient = await open(demoAccounts[1]);
     addTearDown(recipient.close);
@@ -314,7 +308,10 @@ void main() {
     // The wallet fetches the signed devnet policy and the prover attests
     // before it gets the encrypted request; nothing else is fetched, no
     // proving key among it.
-    const fetched = {'GET /attestation', 'GET /tee-policy/devnet.json'};
+    final fetched = {
+      _proverRoute('GET', '/attestation'),
+      'GET /tee-policy/devnet.json',
+    };
     expect(transport.sent, containsAll(fetched));
     expect(
       transport.sent.where(
@@ -394,9 +391,7 @@ void main() {
     addTearDown(transport.close);
     final wallet = await SprWallet.open(
       signer: await DemoSigner.fromSeedHex(demoAccounts[1].seedHex),
-      config: await config(
-        proverUrl: _proverUrl.isEmpty ? _deploymentProver : _proverUrl,
-      ),
+      config: await config(proverUrl: _prover),
       transport: transport.send,
     );
     addTearDown(wallet.close);
@@ -464,11 +459,11 @@ void main() {
       transport.sent.where((r) => r.startsWith('POST ') && _isProof(r)),
       hasLength(1),
     );
-    expect(transport.sent, contains('GET /attestation'));
+    expect(transport.sent, contains(_proverRoute('GET', '/attestation')));
   }, skip: !_enabled);
 }
 
-/// A proof request or status poll: `/prove/<key>` on a prover, the key-less
-/// `/prove` on the Helius gateway.
+/// A proof request or its status poll: `/prove/<key>` or
+/// `/prove/<key>/status` below the prover URL.
 bool _isProof(String request) =>
     RegExp(r'/prove(/|$)').hasMatch(request.split(' ').last);

@@ -38,7 +38,7 @@ export SPONSOR_KEYPAIR='/absolute/path/to/devnet-sponsor.json'
 export RPC_URL='https://your-devnet-rpc'
 export PROVER_URL='https://dd73hh473h6ha.cloudfront.net'
 export RUN_DIR="$PWD/.example-runs"
-cargo run -p zolana-example-backend
+cargo run -p spr-example-backend
 ```
 
 It listens on `127.0.0.1:8788`. `LISTEN_ADDR` overrides that. Use HTTPS when
@@ -56,14 +56,16 @@ From `packages/spr_mobile/example`:
 flutter run -t lib/main_sponsored.dart \
   --dart-define=ZOLANA_BACKEND_URL=http://127.0.0.1:8788/ \
   --dart-define=ZOLANA_BACKEND_AUTH=replace-with-a-random-development-token \
-  --dart-define=ZOLANA_RPC_URL=https://your-devnet-rpc \
+  --dart-define=ZOLANA_API_KEY=your-devnet-helius-key \
   --dart-define=ZOLANA_MERGE_ROUNDS=2 \
   --dart-define=ZOLANA_MERGE_INPUTS=2
 ```
 
 Use `http://10.0.2.2:8788/` for an Android emulator. A physical device needs an
-accessible HTTPS backend. `ZOLANA_INDEXER_URL` defaults to the pinned devnet
-indexer; `ZOLANA_TREE_ID` defaults to 0. Set `ZOLANA_MINT` for an SPL token.
+accessible HTTPS backend. The wallet reaches devnet-e's RPC and indexer through
+the Helius gateway with `ZOLANA_API_KEY`; `ZOLANA_RPC_URL` and
+`ZOLANA_INDEXER_URL` replace them. `ZOLANA_TREE_ID` defaults to 0. Set
+`ZOLANA_MINT` for an SPL token.
 The public demo account A needs devnet SOL for registration, shielding and the
 final payment, plus tokens when testing a token. The sponsor pays merge network
 fees and cache creation. Never put real funds in the published demo accounts.

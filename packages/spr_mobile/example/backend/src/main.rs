@@ -16,7 +16,10 @@ use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use spr_client::{compile_message, rpc::sign_transaction, ComputeBudgetConfig};
 use spr_interface::{
-    instruction::{tag, CreateCacheData, MergeTransactIxData},
+    instruction::{
+        instruction_data::merge_transact::MERGE_SUPPORTED_INPUT_COUNTS, tag, CreateCacheData,
+        MergeTransactIxData,
+    },
     pda,
 };
 use spr_mobile::CacheTarget;
@@ -31,6 +34,16 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::{Mutex, Semaphore};
+
+/// How long a run's cache target stays valid, in seconds.
+const RUN_TTL_SECS: i64 = 600;
+/// The highest priority fee a run's merge may pay, in lamports.
+const MAX_PRIORITY_FEE_LAMPORTS: u64 = 10_000;
+/// The compute unit limit of a run's CreateCache + MergeTransact transaction.
+const COMPUTE_UNIT_LIMIT: u32 = 400_000;
+/// The most inputs a cached merge takes: CreateCache + MergeTransact fit 51 in
+/// a 4096-byte v1 message, as the wallet enforces.
+const MAX_CACHED_MERGE_INPUTS: usize = 51;
 
 type Result<T> = std::result::Result<T, Failure>;
 struct Failure(StatusCode, &'static str);
@@ -192,10 +205,10 @@ async fn start(
             sponsor: app.sponsor.pubkey().to_string(),
             nonce,
             tree_id: request.tree_id,
-            expires_at: now() + 600,
+            expires_at: now() + RUN_TTL_SECS,
             slot: 0,
-            max_priority_fee_lamports: 10_000,
-            compute_unit_limit: 400_000,
+            max_priority_fee_lamports: MAX_PRIORITY_FEE_LAMPORTS,
+            compute_unit_limit: COMPUTE_UNIT_LIMIT,
         },
         submissions: BTreeMap::new(),
     };
@@ -223,7 +236,7 @@ fn validate(run: &Run, slot: u8, bytes: &[u8]) -> Result<VersionedMessage> {
     if data.cache_slot != Some(slot)
         || data.expiry_unix_ts <= now() as u64
         || data.expiry_unix_ts > run.target.expires_at as u64
-        || !(2..=51).contains(&data.nullifiers.len())
+        || !(2..=MAX_CACHED_MERGE_INPUTS).contains(&data.nullifiers.len())
     {
         return Err(bad("merge does not match run slot, expiry or input limit"));
     }
@@ -394,10 +407,9 @@ async fn proxy(
         .ok_or_else(|| bad("invalid proxy route"))?;
     let attestation = method == Method::GET && route == "/attestation";
     let merge_route = |path: &str| {
-        matches!(
-            path,
-            "/prove/merge_8_1" | "/prove/merge_24_1" | "/prove/merge_52_1"
-        )
+        MERGE_SUPPORTED_INPUT_COUNTS
+            .iter()
+            .any(|inputs| path == format!("/prove/merge_{inputs}_1"))
     };
     let merge = method == Method::POST && merge_route(route);
     let status = method == Method::GET && route.strip_suffix("/status").is_some_and(merge_route);
@@ -562,10 +574,10 @@ mod tests {
                 sponsor: payer.to_string(),
                 nonce: 1,
                 tree_id: 0,
-                expires_at: now() + 600,
+                expires_at: now() + RUN_TTL_SECS,
                 slot: 0,
                 max_priority_fee_lamports: 5_000,
-                compute_unit_limit: 400_000,
+                compute_unit_limit: COMPUTE_UNIT_LIMIT,
             },
             submissions: BTreeMap::new(),
         };
@@ -606,7 +618,7 @@ mod tests {
             &payer,
             &[create.instruction(), merge.instruction()],
             Default::default(),
-            ComputeBudgetConfig::new(400_000).with_priority_fee(5_000),
+            ComputeBudgetConfig::new(COMPUTE_UNIT_LIMIT).with_priority_fee(5_000),
         )
         .unwrap();
         (run, message)

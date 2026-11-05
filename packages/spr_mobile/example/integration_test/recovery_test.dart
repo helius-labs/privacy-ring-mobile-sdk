@@ -7,11 +7,10 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:spr_mobile/spr_mobile.dart';
 import 'package:zolana_mobile_demo/app_transport.dart';
-import 'package:zolana_mobile_demo/demo_assets.dart';
 import 'package:zolana_mobile_demo/demo_keys.dart';
 import 'package:zolana_mobile_demo/demo_signer.dart';
+import 'package:zolana_mobile_demo/network.dart';
 import 'package:zolana_mobile_demo/recovery.dart';
-import 'package:zolana_mobile_demo/wallet_screen.dart' show Network;
 
 /// The recovery cases of `lib/recovery.dart` on Zolana devnet, with demo
 /// account B: restoring on a new phone from the user's signature, reopening
@@ -42,13 +41,10 @@ void main() {
       isNotEmpty,
       reason: 'pass --dart-define=ZOLANA_API_KEY=...',
     );
-    return WalletConfig(
-      rpcUrl: Network.devnet.rpcUrl,
-      indexerUrl: Network.devnet.indexerUrl,
+    return demoConfig(
       provingKeyDir:
           provingKeyDir ??
           '${(await getApplicationSupportDirectory()).path}/proving-keys',
-      mints: [for (final asset in demoAssets) ?asset.config],
     );
   }
 

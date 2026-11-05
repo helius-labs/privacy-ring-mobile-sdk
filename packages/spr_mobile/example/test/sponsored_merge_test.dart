@@ -132,7 +132,7 @@ void main() {
     await flow.mergeRounds();
     expect(wallet.prepares, 1);
     expect(backend.relays, 1);
-    expect(store.data!['phase'], 'ready');
+    expect(store.data!['phase'], RunPhase.ready.name);
   });
 
   test('recovery resends saved bytes and retains state until completion is durable', () async {
@@ -141,7 +141,7 @@ void main() {
         ..data = {
           'version': 1,
           'backend': 'https://backend.example/',
-          'phase': 'submitted',
+          'phase': RunPhase.submitted.name,
           'merges': [],
           'payment': 'payment-snapshot',
           'paymentSignature': base58Encode(List.filled(64, 7)),
@@ -160,13 +160,13 @@ void main() {
       store.failCompletion = true;
       await expectLater(flow.reconcilePayment(), throwsStateError);
       expect(flow.complete, isFalse);
-      expect(store.data!['phase'], 'submitted');
+      expect(store.data!['phase'], RunPhase.submitted.name);
       expect(wallet.submissions.single, List.filled(64, 7));
       expect(wallet.prepares, 0);
       store.failCompletion = false;
       await flow.reconcilePayment();
       expect(flow.complete, isTrue);
-      expect(store.data!['phase'], 'complete');
+      expect(store.data!['phase'], RunPhase.complete.name);
     }
   });
 
@@ -179,7 +179,7 @@ void main() {
     final key = SecretKey(List.filled(32, 7));
     final store = SponsoredStore(file, key);
     final state = {
-      'phase': 'submitted',
+      'phase': RunPhase.submitted.name,
       'paymentSignature': 'saved-before-submission',
       'amount': '123456789',
     };
@@ -309,7 +309,7 @@ void main() {
     await flow.restore();
     await flow.mergeRounds();
     expect(wallet.prepares, 2);
-    expect(flow.phase, 'ready');
+    expect(flow.phase, RunPhase.ready);
     expect(store.data!['inputIds'], plan);
   });
 }
@@ -323,7 +323,8 @@ class _Store implements SponsoredStore {
       : jsonDecode(jsonEncode(data)) as Map<String, dynamic>;
   @override
   Future<void> write(Map<String, dynamic> state) async {
-    if (failWrites || (failCompletion && state['phase'] == 'complete')) {
+    if (failWrites ||
+        (failCompletion && state['phase'] == RunPhase.complete.name)) {
       throw StateError('disk full');
     }
     data = jsonDecode(jsonEncode(state)) as Map<String, dynamic>;

@@ -5,11 +5,10 @@ import 'package:spr_mobile/spr_mobile.dart';
 import 'package:zolana_mobile_demo/demo_assets.dart';
 import 'package:zolana_mobile_demo/demo_keys.dart';
 import 'package:zolana_mobile_demo/demo_signer.dart';
-import 'package:zolana_mobile_demo/prover_policy.dart';
+import 'package:zolana_mobile_demo/network.dart';
 import 'package:zolana_mobile_demo/sponsored_merge.dart';
 import 'package:zolana_mobile_demo/spend_checks.dart';
 import 'package:zolana_mobile_demo/test_cluster_rpc.dart';
-import 'package:zolana_mobile_demo/wallet_screen.dart' show Network;
 
 /// Opt-in live test against the example backend. Uses the public devnet demo
 /// accounts and spends devnet SOL and TEST tokens; see backend/README.md.
@@ -83,16 +82,11 @@ void main() {
         }
 
         final signer = await DemoSigner.fromSeedHex(demoAccounts[0].seedHex);
-        final config = WalletConfig(
-          rpcUrl: Network.devnet.rpcUrl,
-          indexerUrl: Network.devnet.indexerUrl,
+        final config = demoConfig(
           provingKeyDir:
               '${(await getApplicationSupportDirectory()).path}/proving-keys',
           proverUrl: backend.proverUrl,
           requireProverTee: true,
-          proverTeePolicy: demoProverPolicy,
-          proverTeeNetwork: demoProverNetwork,
-          mints: [for (final asset in demoAssets) ?asset.config],
         );
         Future<SprWallet> open() => SprWallet.open(
           signer: signer,
@@ -140,7 +134,7 @@ void main() {
         run = flow(store);
         await run.restore();
         await run.mergeRounds();
-        expect(run.phase, 'ready');
+        expect(run.phase, RunPhase.ready);
         expect(
           (run.state!['merges'] as List).first['signature'],
           firstSignature,
@@ -174,7 +168,7 @@ void main() {
         store = await SponsoredStore.forWallet(directory, wallet);
         run = flow(store);
         await run.restore();
-        expect(run.phase, 'approval');
+        expect(run.phase, RunPhase.approval);
         expect(run.payment!.message, orderedEquals(message));
         await run.refreshPayment();
         var approvals = 0;
@@ -187,7 +181,7 @@ void main() {
         expect(approvals, 1);
         expect(proofPosts, 2, reason: 'final payment must be proved locally');
         expect(run.complete, isTrue);
-        expect((await store.read())!['phase'], 'complete');
+        expect((await store.read())!['phase'], RunPhase.complete.name);
         expect(
           await receiver.privateBalance(mint: asset.mint),
           receiverBefore + amount,
