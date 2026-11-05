@@ -4,9 +4,6 @@ import 'demo_assets.dart';
 
 final lamportsPerSol = BigInt.from(1000000000);
 
-/// `1.5 SOL`, trimmed to at most four decimals.
-String formatSol(BigInt lamports) => sol.format(lamports);
-
 final _base58 = RegExp(r'^[1-9A-HJ-NP-Za-km-z]{32,44}$');
 
 bool isSolanaAddress(String value) => _base58.hasMatch(value);

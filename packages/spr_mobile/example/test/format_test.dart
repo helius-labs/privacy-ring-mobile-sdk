@@ -13,8 +13,8 @@ void main() {
       expect(sol.parse(invalid), isNull, reason: invalid);
     }
     expect(sol.amountString(BigInt.from(1234567891)), '1.234567891');
-    expect(formatSol(BigInt.from(1234567891)), '1.2345 SOL');
-    expect(formatSol(BigInt.zero), '0 SOL');
+    expect(sol.format(BigInt.from(1234567891)), '1.2345 SOL');
+    expect(sol.format(BigInt.zero), '0 SOL');
     expect(
       sol.parse(sol.amountString(BigInt.from(987654321))),
       BigInt.from(987654321),

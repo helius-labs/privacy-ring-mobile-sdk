@@ -6,7 +6,7 @@ import 'package:spr_mobile/spr_mobile.dart';
 
 import 'demo_keys.dart';
 import 'demo_signer.dart';
-import 'prover_policy.dart';
+import 'network.dart';
 import 'sponsored_merge.dart';
 import 'spend_checks.dart';
 import 'test_cluster_rpc.dart';
@@ -16,11 +16,6 @@ const _backendUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:8788/',
 );
 const _auth = String.fromEnvironment('ZOLANA_BACKEND_AUTH');
-const _rpc = String.fromEnvironment('ZOLANA_RPC_URL');
-const _indexer = String.fromEnvironment(
-  'ZOLANA_INDEXER_URL',
-  defaultValue: 'https://d34xe1hqb2ibg2.cloudfront.net',
-);
 const _syncOnly = bool.fromEnvironment('ZOLANA_PROVER_SYNC_ONLY');
 const _mint = String.fromEnvironment('ZOLANA_MINT');
 const _rounds = int.fromEnvironment('ZOLANA_MERGE_ROUNDS', defaultValue: 1);
@@ -56,8 +51,8 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
   }
 
   Future<void> _open() => _run(() async {
-    if (_rpc.isEmpty || _auth.isEmpty) {
-      throw StateError('Set ZOLANA_RPC_URL and ZOLANA_BACKEND_AUTH');
+    if (!Network.hasApiKey || _auth.isEmpty) {
+      throw StateError('Set ZOLANA_API_KEY and ZOLANA_BACKEND_AUTH');
     }
     final base = Uri.parse(
       _backendUrl.endsWith('/') ? _backendUrl : '$_backendUrl/',
@@ -69,15 +64,11 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
     final wallet = await SprWallet.open(
       signer: signer,
       transport: backend.transport,
-      config: WalletConfig(
-        rpcUrl: _rpc,
-        indexerUrl: _indexer,
+      config: demoConfig(
         provingKeyDir: '${directory.path}/proving',
         proverUrl: backend.proverUrl,
         requireProverTee: true,
         proverSyncOnly: _syncOnly,
-        proverTeePolicy: demoProverPolicy,
-        proverTeeNetwork: demoProverNetwork,
         proving: Proving.local,
       ),
     );
@@ -87,7 +78,7 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
       signer,
       backend,
       await SponsoredStore.forWallet(directory, wallet),
-      SpendChecks(TestClusterRpc(_rpc)),
+      SpendChecks(TestClusterRpc(Network.devnet.rpcUrl)),
     );
     await flow.restore();
     _flow = flow;
@@ -218,7 +209,9 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
           'Backend: $_backendUrl\nAccount: ${demoAccounts[0].publicKey}',
         ),
         const SizedBox(height: 16),
-        Text('Run: ${_flow?.phase ?? "opening"}'),
+        Text(
+          'Run: ${_flow == null ? 'opening' : _flow!.phase?.name ?? 'No active run'}',
+        ),
         if (_busy) const LinearProgressIndicator(),
         SelectableText(_status),
         const SizedBox(height: 16),
@@ -259,11 +252,11 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
           decoration: const InputDecoration(labelText: 'Amount in base units'),
         ),
         FilledButton(
-          onPressed: _busy || _flow?.phase != 'ready' ? null : _prepare,
+          onPressed: _busy || _flow?.phase != RunPhase.ready ? null : _prepare,
           child: const Text('Prove payment locally'),
         ),
         OutlinedButton(
-          onPressed: _busy || _flow?.phase != 'approval'
+          onPressed: _busy || _flow?.phase != RunPhase.approval
               ? null
               : () => _run(() async {
                   await _flow!.refreshPayment();
@@ -272,11 +265,13 @@ class _SponsoredDemoState extends State<SponsoredDemo> {
           child: const Text('Refresh unsigned payment'),
         ),
         FilledButton(
-          onPressed: _busy || _flow?.phase != 'approval' ? null : _send,
+          onPressed: _busy || _flow?.phase != RunPhase.approval ? null : _send,
           child: const Text('Review and sign'),
         ),
         OutlinedButton(
-          onPressed: _busy || _flow?.phase != 'submitted' ? null : _reconcile,
+          onPressed: _busy || _flow?.phase != RunPhase.submitted
+              ? null
+              : _reconcile,
           child: const Text('Recover submitted payment'),
         ),
       ],

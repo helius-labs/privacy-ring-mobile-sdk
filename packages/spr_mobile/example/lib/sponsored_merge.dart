@@ -139,6 +139,11 @@ class SponsoredStore {
   }
 }
 
+/// Where a run is: merging its rounds, [ready] to prepare the payment,
+/// awaiting the payment's [approval], payment [submitted], or [complete].
+/// The saved run holds its [name].
+enum RunPhase { merging, ready, approval, submitted, complete }
+
 /// Wallet-initiated, one-cache run. The SDK awaits the proof, including encrypted
 /// job polling when queued. Chain/cache confirmation is a separate step.
 class SponsoredFlow {
@@ -158,8 +163,14 @@ class SponsoredFlow {
   final _merges = <PreparedTransaction>[];
   PreparedTransaction? payment;
 
-  bool get complete => state?['phase'] == 'complete';
-  String get phase => state?['phase'] as String? ?? 'No active run';
+  bool get complete => phase == RunPhase.complete;
+
+  /// Null without a run.
+  RunPhase? get phase => switch (state?['phase']) {
+    final String name => RunPhase.values.byName(name),
+    _ => null,
+  };
+  void _enter(RunPhase phase) => state!['phase'] = phase.name;
   String? get paymentSignature => state?['paymentSignature'] as String?;
 
   Future<void> restore() async {
@@ -239,7 +250,7 @@ class SponsoredFlow {
       'mint': mint,
       'inputIds': inputs,
       'merges': <Map<String, dynamic>>[],
-      'phase': 'merging',
+      'phase': RunPhase.merging.name,
     };
     _merges.clear();
     payment = null;
@@ -296,12 +307,12 @@ class SponsoredFlow {
       // Keep merge inputs reserved until the whole payment completes. This
       // prevents the next round from selecting an earlier merged input.
     }
-    state!['phase'] = 'ready';
+    _enter(RunPhase.ready);
     await _save();
   }
 
   Future<void> preparePayment(List<Output> outputs) async {
-    if (phase != 'ready' || payment != null) {
+    if (phase != RunPhase.ready || payment != null) {
       throw StateError('Finish merges before preparing the payment');
     }
     final cached = _merges.map((merge) => merge.cachedOutput!).toList();
@@ -331,12 +342,14 @@ class SponsoredFlow {
         )
         .toList();
     state!['payment'] = snapshot;
-    state!['phase'] = 'approval';
+    _enter(RunPhase.approval);
     await _save();
   }
 
   Future<void> refreshPayment() async {
-    if (payment == null || paymentSignature != null || phase != 'approval') {
+    if (payment == null ||
+        paymentSignature != null ||
+        phase != RunPhase.approval) {
       throw StateError('Only an unsigned payment can be refreshed');
     }
     payment = await wallet.refresh(payment!);
@@ -349,7 +362,7 @@ class SponsoredFlow {
   ) async {
     if (paymentSignature != null) return reconcilePayment();
     final transaction = payment;
-    if (transaction == null || phase != 'approval') {
+    if (transaction == null || phase != RunPhase.approval) {
       throw StateError('Prepare the payment first');
     }
     final cached = _merges.map((merge) => merge.cachedOutput!).toList();
@@ -388,7 +401,7 @@ class SponsoredFlow {
       transaction: transaction,
     );
     state!['paymentSignature'] = base58Encode(signature);
-    state!['phase'] = 'submitted';
+    _enter(RunPhase.submitted);
     await _save(); // BEFORE submitting the user-signed payment.
     final result = await wallet.submit(transaction, [signature]);
     await _completed();
@@ -419,7 +432,7 @@ class SponsoredFlow {
   }
 
   Future<void> _completed() async {
-    final completed = {...state!, 'phase': 'complete'};
+    final completed = {...state!, 'phase': RunPhase.complete.name};
     await store.write(completed);
     state = completed;
     for (final merge in _merges) {

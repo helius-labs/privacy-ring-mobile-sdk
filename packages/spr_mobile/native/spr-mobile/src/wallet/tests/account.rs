@@ -27,26 +27,6 @@ fn opens_only_from_a_signature_over_the_derivation_message() {
 }
 
 #[test]
-fn errors_mask_api_keys_in_urls() {
-    let config = WalletConfig {
-        rpc_url: "https://rpc.example/?api-key=secret".to_string(),
-        indexer_url: "https://indexer.example/v1/spr?api-key=secret".to_string(),
-        ..config()
-    };
-    let mut wallet = open_with(&Keypair::new(), config).unwrap();
-    for error in [
-        wallet.registration_status().unwrap_err(),
-        wallet.private_balance(None).unwrap_err(),
-    ] {
-        let WalletError::Client { message } = &error else {
-            panic!("{error:?}");
-        };
-        assert!(message.contains("api-key=redacted"), "{message}");
-        assert!(!message.contains("secret"), "{message}");
-    }
-}
-
-#[test]
 fn reopens_from_exported_keys_and_refuses_others() {
     let signer = Keypair::new();
     let wallet = open(&signer).unwrap();

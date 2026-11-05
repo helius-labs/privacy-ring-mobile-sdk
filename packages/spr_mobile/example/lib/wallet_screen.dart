@@ -13,38 +13,16 @@ import 'demo_signer.dart';
 import 'format.dart';
 import 'main.dart' show DemoScreen;
 import 'merge_sheet.dart';
-import 'prover_policy.dart';
+import 'network.dart';
 import 'spend_checks.dart';
 import 'spend_limit.dart';
 import 'test_cluster_rpc.dart';
-
-const _apiKey = String.fromEnvironment('ZOLANA_API_KEY');
-const _rpcUrl = String.fromEnvironment('ZOLANA_RPC_URL');
 
 /// SOL kept public when shielding the maximum, for this account's fees.
 final _feeReserve = BigInt.from(10000000);
 
 /// Enough public SOL to pay for registering and a first shield.
 final _setupMinimum = BigInt.from(5000000);
-
-class Network {
-  const Network(this.rpcUrl, this.indexerUrl, this.proverUrl);
-
-  final String rpcUrl;
-  final String indexerUrl;
-  final String proverUrl;
-
-  /// Zolana's devnet-e deployment: Solana RPC through Helius, keyed by the
-  /// Helius key from `--dart-define=ZOLANA_API_KEY=...`, and the deployment's
-  /// indexer, directly until the Helius gateway serves devnet-e.
-  static const devnet = Network(
-    _rpcUrl == ''
-        ? 'https://beta-devnet.helius-rpc.com/?api-key=$_apiKey'
-        : _rpcUrl,
-    'https://d34xe1hqb2ibg2.cloudfront.net',
-    'https://dd73hh473h6ha.cloudfront.net',
-  );
-}
 
 enum _Phase { opening, needsFunds, settingUp, ready, failed }
 
@@ -106,10 +84,8 @@ class _WalletScreenState extends State<WalletScreen> {
     try {
       // Release the previous account before this one proves.
       await previous?.close();
-      if (identical(_network, Network.devnet) &&
-          _apiKey.isEmpty &&
-          _rpcUrl.isEmpty) {
-        throw 'Set ZOLANA_RPC_URL or ZOLANA_API_KEY for Solana devnet.';
+      if (identical(_network, Network.devnet) && !Network.hasApiKey) {
+        throw 'Set ZOLANA_API_KEY for the Helius devnet gateway.';
       }
       final signer = await DemoSigner.fromSeedHex(
         _account.seedHex,
@@ -118,15 +94,11 @@ class _WalletScreenState extends State<WalletScreen> {
       );
       final keys =
           '${(await getApplicationSupportDirectory()).path}/proving-keys';
-      final config = WalletConfig(
-        rpcUrl: _network.rpcUrl,
-        indexerUrl: _network.indexerUrl,
-        proverUrl: _network.proverUrl,
-        proverTeePolicy: demoProverPolicy,
-        proverTeeNetwork: demoProverNetwork,
+      final config = demoConfig(
         provingKeyDir: keys,
+        network: _network,
+        proverUrl: _network.proverUrl,
         maxSpendInputs: 8,
-        mints: [for (final asset in demoAssets) ?asset.config],
       );
       final wallet = await SprWallet.open(
         signer: signer,

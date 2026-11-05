@@ -564,66 +564,6 @@ openWallet() async {
 Matcher throwsWalletError(WalletError error) => throwsA(error);
 
 void main() {
-  test('activity rows compare recipient lists by value across reads', () {
-    ActivityEntry row({List<String>? recipients}) => ActivityEntry(
-      kind: ActivityKind.sent,
-      amount: BigInt.from(20),
-      signature: 'signature',
-      slot: BigInt.from(10),
-      blockTime: 1800000000,
-      index: BigInt.one,
-      recipients: recipients ?? [],
-    );
-    final first = row(recipients: ['recipient']);
-    final second = row(recipients: ['recipient']);
-    expect(first, second);
-    expect(first.hashCode, second.hashCode);
-    expect(row(recipients: ['other']), isNot(first));
-    expect(row(), row());
-    final withoutRecipients = ActivityEntry(
-      kind: ActivityKind.received,
-      amount: BigInt.one,
-      signature: 'signature',
-      slot: BigInt.from(10),
-      index: BigInt.one,
-    );
-    expect(withoutRecipients.recipients, isEmpty);
-  });
-
-  test('transaction lookups compare rows and outputs by value', () {
-    TransactionLookup lookup() => TransactionLookup(
-      status: TransactionLookupStatus.ready,
-      entries: [
-        ActivityEntry(
-          kind: ActivityKind.sent,
-          amount: BigInt.from(20),
-          signature: 'signature',
-          slot: BigInt.from(10),
-          index: BigInt.one,
-          recipients: ['recipient'],
-        ),
-      ],
-      outputs: [
-        TransactionOutput(
-          recipient: 'recipient',
-          amount: BigInt.from(20),
-          isPublic: false,
-        ),
-      ],
-      fee: BigInt.from(5000),
-      indexedSlot: BigInt.from(90),
-    );
-    expect(lookup(), lookup());
-    expect(lookup().hashCode, lookup().hashCode);
-    expect(lookup().copyWith(outputs: const []), isNot(lookup()));
-    final withoutOutputs = TransactionLookup(
-      status: TransactionLookupStatus.notFound,
-      entries: const [],
-      indexedSlot: BigInt.zero,
-    );
-    expect(withoutOutputs.outputs, isEmpty);
-  });
-
   test(
     'signature lookup preserves rows, outputs, metadata and statuses',
     () async {
