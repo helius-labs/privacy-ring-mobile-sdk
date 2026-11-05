@@ -6,14 +6,19 @@ use super::*;
 #[test]
 fn notes_are_read_once_the_indexer_has_the_rpcs_slot() {
     let signer = Keypair::new();
+    // Photon refuses a read whose minContextSlot it has not reached.
     let at_slot = |indexed: u64| {
         move |method: &str| match method {
             "getSlot" => serde_json::json!({"result": 100}),
+            _ if indexed < 100 => serde_json::json!({"error": {
+                "code": -32016,
+                "message": "Minimum context slot has not been reached",
+                "data": {"contextSlot": indexed},
+            }}),
             _ => serde_json::json!({"result": {
                 "context": {"blockTime": 0, "slot": indexed},
-                "transactions": [],
-                "matches": [],
-                "nextCursor": null,
+                "data": [],
+                "paginationToken": null,
             }}),
         }
     };
@@ -209,9 +214,8 @@ fn a_spend_reuses_the_last_read_within_its_window() {
         "getBlockHeight" => serde_json::json!({"result": 5}),
         _ => serde_json::json!({"result": {
             "context": {"blockTime": 0, "slot": 100},
-            "transactions": [],
-            "matches": [],
-            "nextCursor": null,
+            "data": [],
+            "paginationToken": null,
         }}),
     };
     let tag_reads = |asked: &Arc<Mutex<Vec<String>>>| {
