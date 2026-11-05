@@ -25,6 +25,9 @@ Unreleased.
   unavailable times stay null and are retried after a growing wait. Recipient
   tags need no extra RPC reads. The existing per-asset rows and their
   identities are preserved.
+* Add `provingKeysFromProver` to fetch compatible keys through the attested prover
+  at wallet open, using one fixed set for downloads, local and remote proving,
+  and verification; the prover must serve the runtime catalog metadata.
 
 * Pin merged Zolana #521 (SDK 0.8.0-alpha). Gateways now use `/v1/spr`,
   `/attestation` and `Spr-Tee*` headers; update backend proxies together.

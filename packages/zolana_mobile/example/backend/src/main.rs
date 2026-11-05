@@ -393,6 +393,7 @@ async fn proxy(
         .strip_prefix("/v1/spr")
         .ok_or_else(|| bad("invalid proxy route"))?;
     let attestation = method == Method::GET && route == "/attestation";
+    let catalog = method == Method::GET && route == "/proving-keys";
     let merge_route = |path: &str| {
         matches!(
             path,
@@ -401,14 +402,14 @@ async fn proxy(
     };
     let merge = method == Method::POST && merge_route(route);
     let status = method == Method::GET && route.strip_suffix("/status").is_some_and(merge_route);
-    if !attestation && !merge && !status {
+    if !attestation && !catalog && !merge && !status {
         return Err(Failure(
             StatusCode::NOT_FOUND,
-            "only attestation, merge proof and merge status routes are exposed",
+            "only attestation, proving keys, merge proof and merge status routes are exposed",
         ));
     }
     let header_true = |name| headers.get(name).and_then(|v| v.to_str().ok()) == Some("true");
-    if merge || status {
+    if merge || status || catalog {
         if !headers.contains_key("spr-tee") || !headers.contains_key("spr-tee-enc") {
             return Err(bad("encrypted TEE request required"));
         }
@@ -438,6 +439,15 @@ async fn proxy(
                 return Err(bad("encrypted status request with one jobId required"));
             }
         }
+        if catalog
+            && (uri.query().is_some()
+                || !headers.contains_key("spr-tee-ciphertext")
+                || !body.is_empty()
+                || headers.contains_key("x-sync")
+                || headers.contains_key("x-async"))
+        {
+            return Err(bad("encrypted key catalog request required"));
+        }
     }
     let _permit = app
         .concurrency
@@ -451,7 +461,7 @@ async fn proxy(
     ));
     upstream.set_query(uri.query());
     let mut request = app.http.request(method, upstream);
-    if status {
+    if status || catalog {
         request = request.timeout(Duration::from_secs(30));
     }
     for name in [
@@ -652,7 +662,7 @@ mod http_tests {
     use axum::body::to_bytes;
 
     #[tokio::test]
-    async fn queued_tee_jobs_preserve_encryption_delivery_and_exact_status_query() {
+    async fn tee_catalog_and_jobs_preserve_encryption_delivery_and_exact_status_query() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use zolana_prover_tee::{seal_response, EncryptedRequest, FixtureProver};
         let fixture = Arc::new(FixtureProver::from_ikm(&[42; 32]));
@@ -667,7 +677,10 @@ mod http_tests {
                     let fixture = fixture.clone();
                     let polls = polls.clone();
                     async move {
-                        assert_eq!(uri.to_string(), "/prove/merge_24_1/status?jobId=job%2F1");
+                        assert!(matches!(
+                            uri.to_string().as_str(),
+                            "/proving-keys" | "/prove/merge_24_1/status?jobId=job%2F1"
+                        ));
                         assert!(headers.get("x-sf-auth").is_none());
                         assert!(headers.get("x-sync").is_none());
                         assert!(headers.get("x-async").is_none());
@@ -682,10 +695,14 @@ mod http_tests {
                             )
                             .unwrap();
                         assert!(opened.plaintext.is_empty());
-                        let response = match polls.fetch_add(1, Ordering::Relaxed) {
-                            0 => json!({"status":"processing"}),
-                            1 => json!({"status":"completed","result":{"opaqueProof":"test"}}),
-                            _ => json!({"status":"failed","error":"test failure"}),
+                        let response = if uri.path() == "/proving-keys" {
+                            json!({"status":"catalog","keys":[]})
+                        } else {
+                            match polls.fetch_add(1, Ordering::Relaxed) {
+                                0 => json!({"status":"processing"}),
+                                1 => json!({"status":"completed","result":{"opaqueProof":"test"}}),
+                                _ => json!({"status":"failed","error":"test failure"}),
+                            }
                         };
                         (
                             [("spr-tee", "v1")],
@@ -744,6 +761,7 @@ mod http_tests {
             concurrency: Semaphore::new(1),
         });
         for (method, route, expected) in [
+            (Method::GET, "/proving-keys", "catalog"),
             (Method::POST, "/prove/merge_24_1", "queued"),
             (
                 Method::GET,

@@ -5,7 +5,7 @@ Groth16 prover in Rust for gnark's proving keys, on the GPU where there is
 one. Android and iOS are supported. The package contains its Rust sources; it
 does not require a sibling Zolana checkout.
 
-This SDK pins Zolana source `c4062d3860965855e47268f61b01a27e774096eb`
+This SDK pins Zolana source `d3024ce0fa879300ceaa716000c11736ccc798ff`
 ([#521](https://github.com/helius-labs/zolana/pull/521), SDK 0.8.0-alpha) and
 shielded-pool program `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`.
 Applications select the deployment explicitly:
@@ -752,7 +752,7 @@ payment; it rechecks cache validity but cannot renew its expiry or proof roots.
 The [runnable proxy/relayer example](example/backend/README.md) includes
 `x-sf-auth`, synchronous and queued TEE merge routes, persistent run recovery and a Flutter entry
 point (`example/lib/main_sponsored.dart`). Both use upstream
-`c4062d3860965855e47268f61b01a27e774096eb` and the artifacts in
+`d3024ce0fa879300ceaa716000c11736ccc798ff` and the artifacts in
 this checkout. These mobile APIs are unreleased; e30b328a does not expose them.
 See the example for migration boundaries, trusted TEE policy configuration and
 the production responsibilities it intentionally leaves to the client backend.
@@ -1196,9 +1196,33 @@ nowhere.
 
 ## Download catalogs
 
+Set `WalletConfig.provingKeysFromProver: true` to fetch a compatible key set
+when opening the wallet. Supply `proverUrl` and either `proverTeeNetwork` or
+`proverTeePolicy`; attestation is required even on loopback. Local proving stays
+local. The SDK downloads only the metadata at open, then fetches each key on
+first use or through `wallet.provingKeys.prefetch(...)`.
+
+This requires a prover deployment serving `runtime.abi`, `runtime.programId`
+and `runtime.verifyingKeys` in its encrypted `/proving-keys` response, with keys
+matching the on-chain verifier. A public JSON catalog alone cannot rotate keys.
+The set stays fixed for that wallet's lifetime and covers its remote merges,
+local final payment and proof verification. Reopen between runs to fetch an
+updated set; a failed fetch fails opening rather than reverting to bundled keys.
+Runtime generations can coexist on disk; clear obsolete wallets' keys with
+`wallet.provingKeys.clear()` before closing them to reclaim space.
+
+`provingKeysFromProver` is mutually exclusive with `provingKeyCatalog` and
+`provingKeyUrl`. Without it, the SDK uses its bundled pins. Compatible key changes
+need no app rebuild; changed proof-input layouts, instructions or unsupported
+solver features still need a new SDK/runtime. Rebuild old proofs after their
+keys are replaced on chain; notes and balances remain unchanged.
+Refreshing keys does not re-prove saved transactions. Restore and reconcile any
+pending submission before preparing a replacement; keep its reservations until
+the outcome is known.
+
 `WalletConfig.provingKeyCatalog` accepts the JSON contents of the
 `/proving-keys` catalog (`keys[].artifacts[]`). Supply it from app configuration
-or fetch it separately. The SDK does not fetch catalogs automatically. Selecting `proverTeeNetwork`
+or fetch it separately. This supplied-catalog option does not fetch a catalog. Selecting `proverTeeNetwork`
 enables signed-policy downloads.
 This option and `provingKeyUrl` are mutually exclusive.
 

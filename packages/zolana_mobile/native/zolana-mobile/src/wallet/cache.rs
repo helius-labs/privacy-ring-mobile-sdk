@@ -213,7 +213,7 @@ impl MobileWallet {
                 .ok_or(WalletError::RemoteProverMissing)?
                 .prove_merge(&result.inputs)?,
         };
-        verify_merge(&result, &proof)?;
+        verify_merge(&result, &proof, self.proving_keys.key_set.as_deref())?;
         let merge_ix = MergeTransact {
             input_tree: pda::tree(target.tree_id),
             output_tree: pda::tree(target.tree_id),
@@ -526,7 +526,17 @@ struct SavedTransaction {
 fn verify_merge(
     result: &zolana_client::MergeProofResult,
     proof: &zolana_client::Proof,
+    keys: Option<&zolana_client::prover::ProvingKeySet>,
 ) -> Result<(), WalletError> {
+    if let Some(keys) = keys {
+        return keys
+            .verify(
+                &format!("merge_{}_1.key", result.inputs.inputs.len()),
+                result.public_input_hash,
+                proof,
+            )
+            .map_err(Into::into);
+    }
     use zolana_interface::verifying_keys::{merge_24_1, merge_52_1, merge_8_1};
     let key = match result.inputs.inputs.len() {
         8 => &merge_8_1::VERIFYINGKEY,

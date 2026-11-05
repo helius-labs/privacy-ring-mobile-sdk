@@ -14,7 +14,7 @@ this example hosts them in one process.
 
 Build the app and server from the same mobile SDK checkout, including its two
 Cargo lockfiles, generated bridge and `native/zolana-mobile/zopro-keys.lock`.
-Both use Zolana commit **c4062d3860965855e47268f61b01a27e774096eb**.
+Both use Zolana commit **d3024ce0fa879300ceaa716000c11736ccc798ff**.
 These additions are unreleased; the older mobile pin e30b328a does not expose them.
 Use the eventual reviewed mobile commit containing this example as the client
 pin; the upstream protocol revision alone is not a mobile SDK release.
@@ -109,6 +109,7 @@ Every endpoint requires `x-sf-auth`. The demo uses one shared bearer token.
 | `GET /runs/{id}` | Returns persisted run and chain signature statuses, in slot order |
 | `POST /runs/{id}/close` | Send `{}`; after expiry, closes the cache and returns rent to the sponsor |
 | `GET /v1/spr/attestation?nonce=…` | Passes through attestation and nonce |
+| `GET /v1/spr/proving-keys` | Encrypted runtime key catalog; requires `x-sf-auth` and TEE headers |
 | `POST /v1/spr/prove/merge_8_1` | Encrypted synchronous or queued merge proof; also supports `merge_24_1` and `merge_52_1` |
 | `GET /v1/spr/prove/merge_8_1/status?jobId=…` | Encrypted job status/result; same three merge shapes |
 
@@ -157,7 +158,7 @@ headers unchanged. POST carries ciphertext in its octet-stream **body**, with
 `Spr-Tee`, `Spr-Tee-Enc` and either `X-Sync: true` or `X-Async: true`;
 encrypted GET uses the `Spr-Tee-Ciphertext` header. Responses preserve the
 TEE headers and status. Rewriting the route or query would break request
-authentication. Only the three merge shapes and their status routes are exposed;
+authentication. Alongside attestation and the encrypted key catalog, only the three merge shapes and their status routes are exposed;
 transfer-proof routes remain absent.
 
 The SDK first requests a synchronous proof. If the prover queues it (including

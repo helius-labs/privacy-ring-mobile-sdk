@@ -97,6 +97,10 @@ pub struct WalletConfig {
     /// when source and artifact digests match the bundled pins. Never fetched
     /// automatically; mutually exclusive with proving_key_url.
     pub proving_key_catalog: Option<String>,
+    /// Fetch compatible keys from the configured attested prover when opening
+    /// the wallet. The key set stays fixed for this wallet's lifetime.
+    /// Mutually exclusive with proving_key_url and proving_key_catalog.
+    pub proving_keys_from_prover: Option<bool>,
     /// Where spends are proved unless a call says otherwise: on the device
     /// when `None`. [`Proving::Remote`] needs [`Self::prover_url`].
     pub proving: Option<Proving>,
@@ -672,11 +676,43 @@ impl MobileWallet {
                 })
             }
         };
+        let remote_prover = config
+            .prover_url
+            .map(|url| {
+                transport.configured_prover(
+                    url,
+                    config.require_prover_tee.unwrap_or(false),
+                    config.prover_tee_policy.as_deref(),
+                    config.prover_tee_network,
+                    config.prover_sync_only.unwrap_or(false),
+                )
+            })
+            .transpose()?;
+        let key_set = if config.proving_keys_from_prover.unwrap_or(false) {
+            if config.proving_key_url.is_some() || config.proving_key_catalog.is_some() {
+                return Err(WalletError::ProvingKeyCatalogInvalid);
+            }
+            Some(
+                remote_prover
+                    .as_ref()
+                    .ok_or(WalletError::RemoteProverMissing)?
+                    .fetch_proving_key_set()?,
+            )
+        } else {
+            None
+        };
+        let remote_prover = remote_prover.map(|prover| {
+            Arc::new(match &key_set {
+                Some(keys) => prover.with_proving_keys(Arc::clone(keys)),
+                None => prover,
+            })
+        });
         let proving_keys = Arc::new(
             KeyStore::new(
                 config.proving_key_dir,
                 config.proving_key_url,
                 transport.clone(),
+                key_set,
             )
             .with_catalog(config.proving_key_catalog.as_deref())?,
         );
@@ -707,20 +743,7 @@ impl MobileWallet {
             recovery_domain,
             proving_keys,
             native_prover,
-            remote_prover: config
-                .prover_url
-                .map(|url| {
-                    transport
-                        .configured_prover(
-                            url,
-                            config.require_prover_tee.unwrap_or(false),
-                            config.prover_tee_policy.as_deref(),
-                            config.prover_tee_network,
-                            config.prover_sync_only.unwrap_or(false),
-                        )
-                        .map(Arc::new)
-                })
-                .transpose()?,
+            remote_prover,
             client,
         })
     }
@@ -2102,6 +2125,7 @@ mod tests {
             proving_key_dir: std::env::temp_dir().display().to_string(),
             proving_key_url: None,
             proving_key_catalog: None,
+            proving_keys_from_prover: None,
             proving: None,
             prover_url: None,
             require_prover_tee: None,
@@ -2166,6 +2190,49 @@ mod tests {
                 MobileWallet::open(config(), pubkey.clone(), signature, unreachable()).err(),
                 Some(WalletError::InvalidDerivationSignature)
             );
+        }
+    }
+
+    #[test]
+    fn runtime_keys_need_an_attested_prover_and_one_download_source() {
+        let signer = Keypair::new();
+        for (url, override_url, catalog, expected) in [
+            (None, None, None, WalletError::RemoteProverMissing),
+            (
+                Some("http://localhost"),
+                None,
+                None,
+                WalletError::ProverPolicyMissing,
+            ),
+            (
+                Some("http://localhost"),
+                Some("https://keys.example"),
+                None,
+                WalletError::ProvingKeyCatalogInvalid,
+            ),
+            (
+                Some("http://localhost"),
+                None,
+                Some("{}"),
+                WalletError::ProvingKeyCatalogInvalid,
+            ),
+        ] {
+            let (transport, requests) =
+                crate::transport::tests::fake(|_| panic!("invalid configuration sent HTTP"));
+            let config = WalletConfig {
+                prover_url: url.map(str::to_string),
+                proving_key_url: override_url.map(str::to_string),
+                proving_key_catalog: catalog.map(str::to_string),
+                proving_keys_from_prover: Some(true),
+                ..config()
+            };
+            let owner = signer.pubkey().to_string();
+            let signature = signer.sign_message(&derivation_message(owner.clone()).unwrap());
+            assert_eq!(
+                MobileWallet::open(config, owner, signature.as_ref().to_vec(), transport).err(),
+                Some(expected)
+            );
+            assert!(requests.lock().unwrap().is_empty());
         }
     }
 

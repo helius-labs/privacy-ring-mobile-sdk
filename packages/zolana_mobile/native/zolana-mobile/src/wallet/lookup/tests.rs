@@ -26,6 +26,7 @@ fn config() -> WalletConfig {
         proving_key_dir: "/unused".into(),
         proving_key_url: None,
         proving_key_catalog: None,
+        proving_keys_from_prover: None,
         proving: None,
         prover_url: None,
         require_prover_tee: None,

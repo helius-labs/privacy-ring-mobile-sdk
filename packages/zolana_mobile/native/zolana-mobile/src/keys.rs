@@ -257,7 +257,7 @@ impl ProvingKeys {
         }
         let mut names: Vec<String> = names.into_iter().collect();
         for name in &names {
-            entry(name)?;
+            self.store.entry(name)?;
         }
         names.sort_by_key(|name| artifacts().keys[name].size);
         Ok(names)
@@ -275,7 +275,7 @@ impl ProvingKeys {
     ) -> Result<bool, WalletError> {
         let keys = names
             .iter()
-            .map(|name| Ok((name.as_str(), entry(name)?)))
+            .map(|name| Ok((name.as_str(), self.store.entry(name)?)))
             .collect::<Result<Vec<_>, WalletError>>()?;
         self.store.prefetch(&keys, |update| {
             futures_executor::block_on(progress(update.clone()))
@@ -301,7 +301,7 @@ impl ProvingKeys {
         request_json: String,
     ) -> Result<ProvedRequest, WalletError> {
         let request_json = Zeroizing::new(request_json);
-        let sha256 = sha256_bytes(&entry(&key_name)?.key_sha256).ok_or_else(|| {
+        let sha256 = sha256_bytes(&self.store.entry(&key_name)?.key_sha256).ok_or_else(|| {
             WalletError::ProvingKeyUnknown {
                 name: key_name.clone(),
             }
@@ -320,6 +320,8 @@ pub struct KeyStore {
     dir: PathBuf,
     base_url: Option<String>,
     catalog_urls: Option<HashMap<String, String>>,
+    entries: HashMap<String, LockEntry>,
+    pub(crate) key_set: Option<Arc<zolana_client::prover::ProvingKeySet>>,
     transport: Transport,
     /// [`PART`] outside tests.
     part: u64,
@@ -349,17 +351,53 @@ fn shared(dir: &Path) -> Arc<Shared> {
 }
 
 impl KeyStore {
-    /// The keys of this lockfile under `root`. Removes the key sets of other
-    /// lockfiles there.
-    pub fn new(root: impl Into<PathBuf>, base_url: Option<String>, transport: Transport) -> Self {
+    /// The selected keys under `root`. Runtime generations coexist; bundled
+    /// keys retain the lockfile cache and its cleanup policy.
+    pub fn new(
+        root: impl Into<PathBuf>,
+        base_url: Option<String>,
+        transport: Transport,
+        key_set: Option<Arc<zolana_client::prover::ProvingKeySet>>,
+    ) -> Self {
         let root = root.into();
-        prune(&root);
-        let dir = root.join(key_set());
+        let identity = match &key_set {
+            Some(keys) => keys.cache_key(),
+            None => crate::keys::key_set(),
+        };
+        // Runtime generations can coexist while another wallet finishes a run.
+        let dir = if key_set.is_some() {
+            root.join("runtime").join(identity)
+        } else {
+            prune(&root, identity);
+            root.join(identity)
+        };
+        let (entries, catalog_urls) = match &key_set {
+            Some(keys) => {
+                let mut entries = HashMap::new();
+                let mut urls = HashMap::new();
+                for (key, artifact) in keys.keys() {
+                    urls.insert(key.name.clone(), artifact.url.clone());
+                    entries.insert(
+                        key.name.clone(),
+                        LockEntry {
+                            file: key.name.replace(".key", ".zopro"),
+                            sha256: artifact.sha256.clone(),
+                            size: artifact.size,
+                            key_sha256: hex(&key.sha256),
+                        },
+                    );
+                }
+                (entries, Some(urls))
+            }
+            None => (artifacts().keys.clone(), None),
+        };
         Self {
             shared: shared(&dir),
             dir,
             base_url: base_url.map(|url| url.trim_end_matches('/').to_string()),
-            catalog_urls: None,
+            catalog_urls,
+            entries,
+            key_set,
             transport,
             part: PART,
         }
@@ -368,7 +406,7 @@ impl KeyStore {
     /// A catalog only supplies locations for the already pinned conversions.
     pub(crate) fn with_catalog(mut self, json: Option<&str>) -> Result<Self, WalletError> {
         if let Some(json) = json {
-            if self.base_url.is_some() {
+            if self.base_url.is_some() || self.key_set.is_some() {
                 return Err(WalletError::ProvingKeyCatalogInvalid);
             }
             self.catalog_urls = Some(catalog_urls(json, &artifacts().keys)?);
@@ -391,6 +429,12 @@ impl KeyStore {
         }
     }
 
+    fn entry(&self, name: &str) -> Result<&LockEntry, WalletError> {
+        self.entries
+            .get(name)
+            .ok_or_else(|| WalletError::ProvingKeyUnknown { name: name.into() })
+    }
+
     /// Path of `key` in the store, downloading it first if it is missing or
     /// does not match the lockfile. The lockfile must pin the sha256 that the
     /// client expects, the one next to the on-chain verifying key.
@@ -398,7 +442,7 @@ impl KeyStore {
     /// the key.
     pub fn ensure(&self, key: &ExpectedProvingKey) -> Result<(PathBuf, u64), WalletError> {
         let name = key.name.as_str();
-        let entry = entry(name)?;
+        let entry = self.entry(name)?;
         self.download_url(name, entry)?;
         if entry.key_sha256 != hex(&key.sha256) {
             return Err(WalletError::ProvingKeyMismatch { name: name.into() });
@@ -420,7 +464,7 @@ impl KeyStore {
                     .as_ref()
                     .is_none_or(|urls| urls.contains_key(*name))
             })
-            .map(|(name, key)| match artifacts().keys.get(name) {
+            .map(|(name, key)| match self.entries.get(name) {
                 Some(entry) => ProvingKeyStatus {
                     name: name.clone(),
                     size: entry.size,
@@ -670,14 +714,6 @@ pub(crate) fn key_sha256(name: &str) -> Option<&'static str> {
         .map(|entry| entry.key_sha256.as_str())
 }
 
-/// The zopro key of gnark key `name`: unknown until one is built.
-fn entry(name: &str) -> Result<&'static LockEntry, WalletError> {
-    artifacts()
-        .keys
-        .get(name)
-        .ok_or_else(|| WalletError::ProvingKeyUnknown { name: name.into() })
-}
-
 fn partial(path: &Path) -> PathBuf {
     sidecar(path, "partial")
 }
@@ -706,13 +742,13 @@ fn sha256_bytes(hex: &str) -> Option<[u8; 32]> {
 
 /// Remove the key sets of other lockfiles under `root`. Best effort: a set
 /// that cannot be removed now is removed by a later open.
-fn prune(root: &Path) {
+fn prune(root: &Path, active: &str) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if entry.file_name() != key_set() && path.join(SET_MARKER).is_file() {
+        if entry.file_name() != active && path.join(SET_MARKER).is_file() {
             let _ = fs::remove_dir_all(&path);
         }
     }
@@ -825,7 +861,7 @@ fn store_failed(path: &Path) -> WalletError {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -845,7 +881,7 @@ mod tests {
         outputs: Vec<u32>,
         max_merge_inputs: u32,
     ) -> Result<Vec<String>, WalletError> {
-        let store = Arc::new(KeyStore::new(scratch("needed"), None, unreachable()));
+        let store = Arc::new(KeyStore::new(scratch("needed"), None, unreachable(), None));
         ProvingKeys {
             prover: NativeProver::new(Arc::clone(&store)),
             store,
@@ -943,7 +979,7 @@ mod tests {
                 .is_empty()
         );
         let root = scratch("catalog-missing");
-        let store = KeyStore::new(&root, None, unreachable())
+        let store = KeyStore::new(&root, None, unreachable(), None)
             .with_catalog(Some(r#"{"keys":[]}"#))
             .unwrap();
         assert_eq!(
@@ -962,11 +998,14 @@ mod tests {
                 name: "k.key".into()
             })
         );
-        assert!(
-            KeyStore::new(&root, Some("https://mirror.example".into()), unreachable())
-                .with_catalog(Some(r#"{"keys":[]}"#))
-                .is_err()
-        );
+        assert!(KeyStore::new(
+            &root,
+            Some("https://mirror.example".into()),
+            unreachable(),
+            None
+        )
+        .with_catalog(Some(r#"{"keys":[]}"#))
+        .is_err());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1012,7 +1051,7 @@ mod tests {
     fn store(root: &Path, transport: Transport) -> KeyStore {
         KeyStore {
             part: 30,
-            ..KeyStore::new(root, None, transport)
+            ..KeyStore::new(root, None, transport, None)
         }
     }
 
@@ -1076,7 +1115,7 @@ mod tests {
 
     #[test]
     fn status_excludes_the_upstream_eddsa_circuits_without_local_keys() {
-        let store = KeyStore::new(scratch("status-catalog"), None, unreachable());
+        let store = KeyStore::new(scratch("status-catalog"), None, unreachable(), None);
         let status = store.status();
         assert_eq!(status.len(), artifacts().keys.len());
         assert!(status
@@ -1116,7 +1155,7 @@ mod tests {
 
     #[test]
     fn a_key_the_verifying_key_does_not_pin_is_refused() {
-        let store = KeyStore::new(scratch("refused"), None, unreachable());
+        let store = KeyStore::new(scratch("refused"), None, unreachable(), None);
         let unknown = ExpectedProvingKey {
             name: "transfer_confidential_9_9.key".into(),
             sha256: [0; 32],
@@ -1461,7 +1500,7 @@ mod tests {
     #[test]
     fn status_lists_the_wallet_keys_and_what_is_on_disk() {
         let root = scratch("status");
-        let store = KeyStore::new(&root, None, unreachable());
+        let store = KeyStore::new(&root, None, unreachable(), None);
         let status = store.status();
         assert!(status.iter().all(|key| is_wallet_key(&key.name)));
         assert!(status.iter().any(|key| key.name == "merge_52_1.key"));

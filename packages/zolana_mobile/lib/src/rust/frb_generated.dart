@@ -3595,24 +3595,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletConfig dco_decode_wallet_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return WalletConfig(
       rpcUrl: dco_decode_String(arr[0]),
       indexerUrl: dco_decode_String(arr[1]),
       provingKeyDir: dco_decode_String(arr[2]),
       provingKeyUrl: dco_decode_opt_String(arr[3]),
       provingKeyCatalog: dco_decode_opt_String(arr[4]),
-      proving: dco_decode_opt_box_autoadd_proving(arr[5]),
-      proverUrl: dco_decode_opt_String(arr[6]),
-      requireProverTee: dco_decode_opt_box_autoadd_bool(arr[7]),
-      proverTeePolicy: dco_decode_opt_String(arr[8]),
-      proverTeeNetwork: dco_decode_opt_box_autoadd_prover_tee_network(arr[9]),
-      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[10]),
-      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[11]),
-      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[12]),
-      mints: dco_decode_opt_list_mint_config(arr[13]),
-      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[14]),
+      provingKeysFromProver: dco_decode_opt_box_autoadd_bool(arr[5]),
+      proving: dco_decode_opt_box_autoadd_proving(arr[6]),
+      proverUrl: dco_decode_opt_String(arr[7]),
+      requireProverTee: dco_decode_opt_box_autoadd_bool(arr[8]),
+      proverTeePolicy: dco_decode_opt_String(arr[9]),
+      proverTeeNetwork: dco_decode_opt_box_autoadd_prover_tee_network(arr[10]),
+      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[11]),
+      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[12]),
+      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[13]),
+      mints: dco_decode_opt_list_mint_config(arr[14]),
+      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[15]),
     );
   }
 
@@ -5038,6 +5039,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_provingKeyDir = sse_decode_String(deserializer);
     var var_provingKeyUrl = sse_decode_opt_String(deserializer);
     var var_provingKeyCatalog = sse_decode_opt_String(deserializer);
+    var var_provingKeysFromProver = sse_decode_opt_box_autoadd_bool(
+      deserializer,
+    );
     var var_proving = sse_decode_opt_box_autoadd_proving(deserializer);
     var var_proverUrl = sse_decode_opt_String(deserializer);
     var var_requireProverTee = sse_decode_opt_box_autoadd_bool(deserializer);
@@ -5056,6 +5060,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       provingKeyDir: var_provingKeyDir,
       provingKeyUrl: var_provingKeyUrl,
       provingKeyCatalog: var_provingKeyCatalog,
+      provingKeysFromProver: var_provingKeysFromProver,
       proving: var_proving,
       proverUrl: var_proverUrl,
       requireProverTee: var_requireProverTee,
@@ -6489,6 +6494,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.provingKeyDir, serializer);
     sse_encode_opt_String(self.provingKeyUrl, serializer);
     sse_encode_opt_String(self.provingKeyCatalog, serializer);
+    sse_encode_opt_box_autoadd_bool(self.provingKeysFromProver, serializer);
     sse_encode_opt_box_autoadd_proving(self.proving, serializer);
     sse_encode_opt_String(self.proverUrl, serializer);
     sse_encode_opt_box_autoadd_bool(self.requireProverTee, serializer);

@@ -1312,6 +1312,11 @@ class WalletConfig {
   /// automatically; mutually exclusive with proving_key_url.
   final String? provingKeyCatalog;
 
+  /// Fetch compatible keys from the configured attested prover when opening
+  /// the wallet. The key set stays fixed for this wallet's lifetime.
+  /// Mutually exclusive with proving_key_url and proving_key_catalog.
+  final bool? provingKeysFromProver;
+
   /// Where spends are proved unless a call says otherwise: on the device
   /// when `None`. [`Proving::Remote`] needs [`Self::prover_url`].
   final Proving? proving;
@@ -1373,6 +1378,7 @@ class WalletConfig {
     required this.provingKeyDir,
     this.provingKeyUrl,
     this.provingKeyCatalog,
+    this.provingKeysFromProver,
     this.proving,
     this.proverUrl,
     this.requireProverTee,
@@ -1392,6 +1398,7 @@ class WalletConfig {
       provingKeyDir.hashCode ^
       provingKeyUrl.hashCode ^
       provingKeyCatalog.hashCode ^
+      provingKeysFromProver.hashCode ^
       proving.hashCode ^
       proverUrl.hashCode ^
       requireProverTee.hashCode ^
@@ -1413,6 +1420,7 @@ class WalletConfig {
           provingKeyDir == other.provingKeyDir &&
           provingKeyUrl == other.provingKeyUrl &&
           provingKeyCatalog == other.provingKeyCatalog &&
+          provingKeysFromProver == other.provingKeysFromProver &&
           proving == other.proving &&
           proverUrl == other.proverUrl &&
           requireProverTee == other.requireProverTee &&

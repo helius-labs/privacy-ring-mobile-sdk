@@ -175,7 +175,6 @@ impl NativeProver {
     fn load(
         &self,
         state: &mut crate::ProverState,
-        name: &str,
         path: &std::path::Path,
     ) -> Result<(), WalletError> {
         state.loaded = None;
@@ -184,7 +183,7 @@ impl NativeProver {
         self.0.loaded.store(id, Ordering::Relaxed);
         state.loaded = Some(Loaded {
             id,
-            key: Some(name.to_string()),
+            key: Some(path.to_path_buf()),
             prover,
         });
         Ok(())
@@ -206,15 +205,18 @@ impl NativeProver {
             .map_err(|_| WalletError::ProverUnavailable)?;
         let loading = Instant::now();
         let loaded_key = state.loaded.as_ref().map(|loaded| loaded.key.as_deref());
-        if loaded_key != Some(Some(name)) {
+        if loaded_key != Some(Some(path.as_path())) {
             if loaded_key == Some(None) {
                 // The application holds its own key; leave it.
                 return Err(WalletError::ProverBusy);
             }
-            self.load(&mut state, name, &path)?;
+            self.load(&mut state, &path)?;
         }
         let load_ms = elapsed_ms(loading);
         let loaded = state.loaded.as_mut().ok_or(WalletError::ProverClosed)?;
+        if loaded.prover.key_sha256() != keys::hex(&key.sha256) {
+            return Err(WalletError::ProvingKeyMismatch { name: name.into() });
+        }
         let proof = loaded.prover.prove(body).map_err(|error| match error {
             zopro_zolana::Error::Unsupported => WalletError::UnsupportedCircuit,
             zopro_zolana::Error::Prove(message) => {
@@ -253,9 +255,17 @@ impl Drop for Native {
 
 /// Proves in the calling thread, so [`ProveRequest::delivery`] does not apply.
 impl Prover for NativeProver {
+    fn key_set(&self) -> Option<&zolana_client::prover::ProvingKeySet> {
+        self.0.keys.key_set.as_deref()
+    }
+
     fn prove(&self, request: &dyn ProveRequest) -> Result<Proof, ClientError> {
         let body = request.body()?;
         let key = request.proving_key()?;
+        let key = match self.key_set() {
+            Some(keys) => keys.expected(&key)?,
+            None => key,
+        };
         let proof_json = self
             .prove_json(&body, &key)
             .map_err(|failure| ClientError::ProverFailed(Box::new(DeviceProverFailure(failure))))?;
@@ -642,6 +652,7 @@ mod tests {
             dir.display().to_string(),
             None,
             crate::transport::tests::unreachable(),
+            None,
         )));
         let failure = prover.prove(&Captured(transfer_2_2_key())).unwrap_err();
         assert!(
@@ -672,6 +683,7 @@ mod tests {
             dir,
             None,
             crate::transport::tests::unreachable(),
+            None,
         )));
         let proof = prover
             .prove(&Captured(transfer_2_2_key()))
@@ -685,6 +697,31 @@ mod tests {
         assert!(image.is_file(), "{}", image.display());
         // The same key serves the next proof without reloading.
         prover.prove(&Captured(transfer_2_2_key())).unwrap();
+
+        // A second generation uses the same filename. It must reload by full
+        // path, even while the first wallet still owns its prover.
+        let (path, _) = prover.0.keys.ensure(&transfer_2_2_key()).unwrap();
+        let generation = path.parent().unwrap().file_name().unwrap();
+        let next_root = path.parent().unwrap().join("next-generation");
+        let next_file = next_root.join(generation).join(path.file_name().unwrap());
+        std::fs::create_dir_all(next_file.parent().unwrap()).unwrap();
+        std::fs::copy(&path, &next_file).unwrap();
+        let previous_id = PREPARED.lock().unwrap().loaded.as_ref().unwrap().id;
+        let next = NativeProver::new(Arc::new(keys::KeyStore::new(
+            &next_root,
+            None,
+            crate::transport::tests::unreachable(),
+            None,
+        )));
+        next.prove(&Captured(transfer_2_2_key())).unwrap();
+        {
+            let state = PREPARED.lock().unwrap();
+            let loaded = state.loaded.as_ref().unwrap();
+            assert_ne!(loaded.id, previous_id);
+            assert_eq!(loaded.key.as_ref(), Some(&next_file));
+        }
+        drop(next);
+        std::fs::remove_dir_all(next_root).unwrap();
     }
 
     /// Proves every `fixtures/prove-request-<n>x<m>.json` with its pinned
@@ -704,6 +741,7 @@ mod tests {
             dir,
             None,
             crate::transport::tests::unreachable(),
+            None,
         ));
         let keys = crate::ProvingKeys {
             prover: NativeProver::new(Arc::clone(&store)),
