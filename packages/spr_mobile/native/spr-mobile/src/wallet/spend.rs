@@ -16,13 +16,16 @@ use crate::{
 use solana_instruction::{AccountMeta, Instruction};
 use solana_message::{v1, VersionedMessage};
 use solana_pubkey::Pubkey;
-use spr_client::{ClientError, Rpc, SignedPrivateTransaction, Submission, UnsignedMessage};
+use spr_client::{
+    ClientError, ProverClient, Rpc, SignedPrivateTransaction, Submission, UnsignedMessage,
+};
 use spr_keypair::ShieldedAddress;
 use spr_program::instruction::{CreateAssociatedTokenAccount, TransactInterfaceTransferAccounts};
 use spr_transaction::{
     instructions::transact::{ConfidentialTransaction, MAX_SPEND_INPUTS},
     TransactionError, WalletUtxo,
 };
+use std::sync::Arc;
 
 /// An output whose recipient was checked on chain.
 pub(super) enum Leg {
@@ -118,7 +121,7 @@ impl MobileWallet {
             recipients.push(parse_pubkey(output.recipient())?);
         }
         let payer = self.fee_payer(fee_payer)?;
-        let proving = self.proving(proving)?;
+        let remote = self.remote_prover(proving)?;
         let asset = self.asset(mint)?;
         let (legs, inputs) = beside(
             || self.legs(asset, &outputs, &recipients),
@@ -179,7 +182,7 @@ impl MobileWallet {
             None => Vec::new(),
         };
         let (unsigned, openings) =
-            self.prove_with_cache(transaction, settlements, payer, proving, &cached)?;
+            self.prove_with_cache(transaction, settlements, payer, remote, &cached)?;
         let mut unsigned = with_setup(unsigned, &payer, &setup)?;
         unsigned.message = self.with_priority_fee(unsigned.message, priority_fee_lamports)?;
         let mut pending = self.proved(
@@ -232,24 +235,31 @@ impl MobileWallet {
         fee_payer.as_deref().map_or(Ok(self.owner), parse_pubkey)
     }
 
-    /// Where a spend is proved: where `proving` says, or where the config
-    /// does. Remote proving without a prover fails here, before the network.
-    pub(super) fn proving(&self, proving: Option<Proving>) -> Result<Proving, WalletError> {
-        let proving = proving.unwrap_or(self.proving);
-        match (proving, &self.remote_prover) {
-            (Proving::Remote, None) => Err(WalletError::RemoteProverMissing),
-            _ => Ok(proving),
+    /// The remote prover of a spend proved where `proving` says, or where
+    /// the config does; `None` on the device. Remote proving without a
+    /// prover fails here, before the network.
+    pub(super) fn remote_prover(
+        &self,
+        proving: Option<Proving>,
+    ) -> Result<Option<Arc<ProverClient>>, WalletError> {
+        match proving.unwrap_or(self.proving) {
+            Proving::Local => Ok(None),
+            Proving::Remote => self
+                .remote_prover
+                .clone()
+                .map(Some)
+                .ok_or(WalletError::RemoteProverMissing),
         }
     }
 
-    /// Encrypt and prove `transaction` where `proving` says, and build the
-    /// Solana message `payer` pays for.
+    /// Encrypt and prove `transaction` with `remote`, or on the device
+    /// without one, and build the Solana message `payer` pays for.
     fn prove_with_cache(
         &self,
         transaction: ConfidentialTransaction,
         settlement_transfers: Vec<TransactInterfaceTransferAccounts>,
         payer: Pubkey,
-        proving: Proving,
+        remote: Option<Arc<ProverClient>>,
         cached: &[CachedOutput],
     ) -> Result<(UnsignedMessage, Vec<OutputOpening>), WalletError> {
         let mut inputs = transaction.encrypt(&self.keys)?;
@@ -273,11 +283,7 @@ impl MobileWallet {
             settlement_transfers,
         };
         let mut submission = Submission::new(&signed, payer, &self.nullifier_key);
-        if proving == Proving::Remote {
-            let remote = self
-                .remote_prover
-                .clone()
-                .ok_or(WalletError::RemoteProverMissing)?;
+        if let Some(remote) = remote {
             submission = submission.with_prover(remote);
         }
         Ok((submission.finish_unsigned_sync(&self.client)?, openings))

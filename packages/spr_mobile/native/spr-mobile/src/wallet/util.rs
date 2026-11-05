@@ -2,7 +2,7 @@
 use crate::error::WalletError;
 use solana_pubkey::Pubkey;
 use spr_transaction::WalletUtxo;
-use std::{str::FromStr, thread};
+use std::{collections::HashSet, str::FromStr, thread};
 
 /// Both, `first` on a thread of its own while `second` runs here: the
 /// network calls of a spend that need nothing from each other.
@@ -18,6 +18,13 @@ pub(super) fn beside<A: Send, B>(
             .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         (first, second)
     })
+}
+
+/// Whether a spend may select `note`: a positive note the default-ring
+/// circuit spends that no prepared spend holds. The Zolana SDK's selection
+/// takes the same candidates; its filter is not public.
+pub(super) fn spend_candidate(note: &WalletUtxo, reserved: &HashSet<[u8; 32]>) -> bool {
+    note.utxo.amount > 0 && note.is_default_ring_spendable() && !reserved.contains(&note.nullifier)
 }
 
 pub(super) fn nullifiers(notes: &[WalletUtxo]) -> Vec<[u8; 32]> {
