@@ -26,7 +26,7 @@ use spr_user_registry_interface::{
     user_record_pda, MergeEncryptionScheme,
 };
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use zeroize::Zeroizing;
@@ -139,18 +139,20 @@ impl MobileWallet {
         derivation_signature: Vec<u8>,
         transport: Transport,
     ) -> Result<MobileWallet, WalletError> {
+        // The signature is the seed of both keys: wiped when `open` returns,
+        // and only borrowed, never copied.
+        let derivation_signature = Zeroizing::new(derivation_signature);
         let owner = parse_pubkey(&solana_pubkey)?;
-        let seed: [u8; derivation::ED25519_SEED_LEN] =
-            derivation_signature
-                .as_slice()
-                .try_into()
-                .map_err(|_| WalletError::InvalidDerivationSignature)?;
+        let seed: &[u8; derivation::ED25519_SEED_LEN] = derivation_signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| WalletError::InvalidDerivationSignature)?;
         let signing_pubkey = PublicKey::from_ed25519(&owner.to_bytes());
         let message = derivation::ed25519_derivation_message(&owner.to_bytes());
-        if !signing_pubkey.verify_message(&message, &seed) {
+        if !signing_pubkey.verify_message(&message, seed) {
             return Err(WalletError::InvalidDerivationSignature);
         }
-        let (nullifier_key, viewing_key) = derivation::expand_roles(&seed, Curve::Ed25519)
+        let (nullifier_key, viewing_key) = derivation::expand_roles(seed, Curve::Ed25519)
             .map_err(|_| WalletError::InvalidDerivationSignature)?;
         Self::from_keys(config, owner, nullifier_key, viewing_key, transport)
     }
@@ -222,7 +224,6 @@ impl MobileWallet {
         let native_prover = NativeProver::new(Arc::clone(&proving_keys));
         // With its own prover, the client fetches every Merkle proof from the
         // indexer itself: the wallet's provers prove only complete witnesses.
-        let recovery_domain = format!("{}\n{}", config.rpc_url, config.indexer_url);
         let client = SprClient::with_prover(
             transport.solana_rpc(config.rpc_url)?,
             transport.indexer(&config.indexer_url),
@@ -243,7 +244,7 @@ impl MobileWallet {
             proving: config.proving.unwrap_or(Proving::Local),
             send_lookup: SEND_LOOKUP,
             priority_fee: config.priority_fee_lamports,
-            recovery_domain,
+            genesis_hash: OnceLock::new(),
             proving_keys,
             native_prover,
             remote_prover: config

@@ -560,7 +560,9 @@ class SprWallet {
       _serial(() => _wallet.exportPreparedTransaction(pending: transaction));
 
   /// Restore before preparing new payments. Reconcile saved submission
-  /// signatures before releasing the restored input reservations.
+  /// signatures before releasing the restored input reservations. Only a
+  /// wallet of the same account on the same cluster and program IDs restores
+  /// a snapshot, whatever its RPC and indexer URLs.
   Future<PreparedTransaction> restorePreparedTransaction(String snapshot) =>
       _serial(
         () => _prepare(_wallet.restorePreparedTransaction(snapshot: snapshot)),

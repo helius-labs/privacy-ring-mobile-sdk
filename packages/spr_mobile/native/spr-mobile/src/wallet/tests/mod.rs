@@ -144,6 +144,24 @@ fn rpc_wallet_with(
     rpc_wallet_asked(signer, config, move |method, _| answer(method))
 }
 
+/// The genesis hash of the cluster the snapshot tests run on.
+pub(super) const GENESIS: [u8; 32] = [5; 32];
+
+/// A wallet at `config`'s endpoints on the cluster whose genesis hash is
+/// `genesis`: its RPC answers `getGenesisHash` and refuses every other
+/// method. Returns the methods it was asked, in order.
+pub(super) fn cluster_wallet(
+    signer: &Keypair,
+    config: WalletConfig,
+    genesis: [u8; 32],
+) -> (MobileWallet, Arc<Mutex<Vec<String>>>) {
+    rpc_wallet_with(signer, config, move |method| match method {
+        // Base58, as the RPC encodes a hash.
+        "getGenesisHash" => serde_json::json!({"result": Pubkey::from(genesis).to_string()}),
+        _ => serde_json::json!({"error": {"code": -32601, "message": "Method not found"}}),
+    })
+}
+
 /// [`rpc_wallet_with`], answering each method by its params too.
 fn rpc_wallet_asked(
     signer: &Keypair,

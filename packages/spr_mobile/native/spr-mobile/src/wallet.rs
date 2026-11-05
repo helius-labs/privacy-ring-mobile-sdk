@@ -36,7 +36,7 @@ use spr_keypair::{NullifierKey, ShieldedAddress, ViewingKey};
 use spr_transaction::LocalShieldedKeys;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
@@ -88,7 +88,8 @@ pub struct MobileWallet {
     send_lookup: IndexerPollConfig,
     /// Default whole-transaction priority fee in lamports.
     priority_fee: Option<u64>,
-    recovery_domain: String,
+    /// The cluster's, read at the first snapshot export or restore.
+    genesis_hash: OnceLock<[u8; 32]>,
     proving_keys: Arc<KeyStore>,
     /// The device prover, the client's too: [`Self::proving_keys`] proves
     /// with it so that a key stays loaded between the two.
