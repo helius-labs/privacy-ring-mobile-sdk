@@ -1,9 +1,6 @@
 //! Public note descriptions and exact merge input selection. Private openings
 //! stay in the wallet; the application refers to notes by their commitments.
-use super::{
-    util::{invalid, spend_candidate},
-    MobileWallet,
-};
+use super::{util::spend_candidate, MobileWallet};
 use crate::{asset::mint_name, error::WalletError};
 use spr_transaction::WalletUtxo;
 use std::collections::{HashMap, HashSet};
@@ -59,9 +56,10 @@ pub(super) const MAX_CACHED_MERGE_INPUTS: usize = 51;
 /// lowercase hex commitments.
 pub(super) fn merge_input_ids(ids: &[String]) -> Result<Vec<[u8; 32]>, WalletError> {
     if !(2..=MAX_CACHED_MERGE_INPUTS).contains(&ids.len()) {
-        return Err(invalid(&format!(
-            "cached merge requires 2 to {MAX_CACHED_MERGE_INPUTS} inputIds"
-        )));
+        return Err(WalletError::MergeInputCountInvalid {
+            count: ids.len() as u64,
+            max: MAX_CACHED_MERGE_INPUTS as u64,
+        });
     }
     let mut seen = HashSet::new();
     ids.iter()
@@ -69,13 +67,9 @@ pub(super) fn merge_input_ids(ids: &[String]) -> Result<Vec<[u8; 32]>, WalletErr
             let mut hash = [0; 32];
             if id.bytes().any(|byte| byte.is_ascii_uppercase())
                 || hex::decode_to_slice(id, &mut hash).is_err()
+                || !seen.insert(hash)
             {
-                return Err(invalid(
-                    "note ID must be a 32-byte lowercase hex commitment",
-                ));
-            }
-            if !seen.insert(hash) {
-                return Err(invalid("duplicate merge input ID"));
+                return Err(WalletError::NoteIdInvalid { id: id.clone() });
             }
             Ok(hash)
         })
@@ -96,17 +90,18 @@ pub(super) fn select_merge_inputs<'a>(
         .map(|id| {
             let note = by_hash
                 .get(id)
-                .ok_or_else(|| invalid("merge input is no longer available"))?;
+                .ok_or_else(|| WalletError::MergeInputUnavailable {
+                    id: hex::encode(id),
+                })?;
             if reserved.contains(&note.nullifier) {
                 return Err(WalletError::NotesReserved {
                     amount: note.utxo.amount,
                 });
             }
-            if note.tree_id() != tree_id {
-                return Err(invalid("merge input is not on the cache target tree"));
-            }
-            if note.utxo.amount == 0 || !note.is_plain() {
-                return Err(invalid("merge input must be a nonzero plain note"));
+            if note.tree_id() != tree_id || note.utxo.amount == 0 || !note.is_plain() {
+                return Err(WalletError::MergeInputInvalid {
+                    id: hex::encode(id),
+                });
             }
             Ok((*note).clone())
         })

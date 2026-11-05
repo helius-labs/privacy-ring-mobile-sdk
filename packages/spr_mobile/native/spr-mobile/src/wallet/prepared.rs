@@ -335,21 +335,21 @@ impl MobileWallet {
         snapshot: String,
     ) -> Result<PreparedTransaction, WalletError> {
         if snapshot.len() > 1_000_000 {
-            return Err(invalid("snapshot too large"));
+            return Err(WalletError::SnapshotInvalid);
         }
         let envelope: Envelope =
-            serde_json::from_str(&snapshot).map_err(|_| invalid("invalid snapshot"))?;
+            serde_json::from_str(&snapshot).map_err(|_| WalletError::SnapshotInvalid)?;
         let mut mac = self.state_mac();
         mac.update(envelope.payload.as_bytes());
         mac.verify_slice(&envelope.tag)
-            .map_err(|_| invalid("snapshot authentication failed"))?;
+            .map_err(|_| WalletError::SnapshotInvalid)?;
         let state: SavedTransaction =
-            serde_json::from_str(&envelope.payload).map_err(|_| invalid("invalid snapshot"))?;
+            serde_json::from_str(&envelope.payload).map_err(|_| WalletError::SnapshotInvalid)?;
         if state.version != 2 {
-            return Err(invalid("unsupported snapshot version"));
+            return Err(WalletError::SnapshotInvalid);
         }
-        let message: VersionedMessage = wincode::deserialize_exact(&state.message)
-            .map_err(|_| invalid("invalid saved message"))?;
+        let message: VersionedMessage =
+            wincode::deserialize_exact(&state.message).map_err(|_| WalletError::SnapshotInvalid)?;
         let mut pending = self.proved(
             state.operation,
             UnsignedMessage {

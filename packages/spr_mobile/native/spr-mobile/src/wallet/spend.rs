@@ -5,7 +5,7 @@ use super::{
     cache::CachedOutput,
     prepared::PreparedTransaction,
     types::{output_openings, Operation, Output, OutputOpening},
-    util::{beside, invalid, nullifiers, parse_pubkey},
+    util::{beside, nullifiers, parse_pubkey},
     MobileWallet,
 };
 use crate::{
@@ -273,7 +273,7 @@ impl MobileWallet {
                 let output = cached
                     .iter()
                     .find(|c| c.commitment == input.utxo_hash)
-                    .ok_or_else(|| invalid("cached input commitment mismatch"))?;
+                    .ok_or(WalletError::CachedOutputInvalid)?;
                 *input = input.clone().with_cache_slot(output.target.slot)?;
             }
         }

@@ -45,6 +45,15 @@ pub enum WalletError {
     /// Only notes a prepared spend reserves would cover `amount`. Submit,
     /// confirm or release that spend first.
     NotesReserved { amount: u64 },
+    /// The fee payer's SOL does not cover the transaction's network fee.
+    InsufficientFundsForFee,
+    /// An account the transaction writes would be left below its
+    /// rent-exempt minimum, such as a token account it creates that the fee
+    /// payer's SOL cannot fund.
+    InsufficientFundsForRent,
+    /// The transaction exceeds Solana's size or account limits. Prepare it
+    /// with fewer inputs.
+    TransactionTooLarge,
     /// `recipient` has not registered a shielded address. A public output
     /// pays it publicly.
     RecipientNotRegistered { recipient: String },
@@ -147,6 +156,40 @@ pub enum WalletError {
     UnexpectedSigners { signers: Vec<String> },
     /// The wallet was closed.
     WalletClosed,
+    /// The priority fee `fee` exceeds `max`, the sponsored run's
+    /// [`CacheTarget::max_priority_fee_lamports`](crate::CacheTarget::max_priority_fee_lamports).
+    PriorityFeeTooHigh { fee: u64, max: u64 },
+    /// The cache target's slot or compute unit limit is out of range.
+    CacheTargetInvalid,
+    /// The sponsored run's cache is past its `expires_at`. Start another run.
+    CacheExpired,
+    /// The run's cache account does not exist yet or was closed: its merge
+    /// has not confirmed, or the run ended.
+    CacheUnavailable,
+    /// The cache account does not match the run's terms, or a slot does not
+    /// hold the merge output the wallet predicted.
+    CacheMismatch,
+    /// A cached output is another wallet's or another mint's, does not match
+    /// its commitment, or shares a slot or a cache wrongly with the other
+    /// inputs.
+    CachedOutputInvalid,
+    /// The prepared cached merge's proof has expired. Prepare it again.
+    MergeExpired,
+    /// The merge names `count` input ids, outside 2 to `max`.
+    MergeInputCountInvalid { count: u64, max: u64 },
+    /// `id` is not a note id (64 lowercase hex characters), or repeats one.
+    NoteIdInvalid { id: String },
+    /// The note `id` is no longer among the wallet's notes: spent, or not
+    /// indexed. Plan the merge again.
+    MergeInputUnavailable { id: String },
+    /// The note `id` is not a nonzero plain note on the cache target's tree.
+    MergeInputInvalid { id: String },
+    /// A prepared-transaction snapshot is too large, malformed or of
+    /// another version, or this wallet on this deployment did not export it.
+    SnapshotInvalid,
+    /// The call's arguments do not go together, as `message` says: a
+    /// programming error.
+    InvalidArguments { message: String },
     /// Any other failure of the Zolana client: the error and its causes,
     /// without key material, with `api-key` values masked.
     Client { message: String },
@@ -175,6 +218,27 @@ impl From<ClientError> for WalletError {
                     == Some(ShieldedPoolError::NullifierAlreadyQueued as u32) =>
             {
                 Self::NotesAlreadySpent
+            }
+            // The indexer refuses a non-inclusion proof of a nullifier it
+            // already holds with this validation message.
+            ClientError::Indexer(ref message) if message.contains("is already used or queued") => {
+                Self::NotesAlreadySpent
+            }
+            ClientError::SolanaRpcTransaction { ref source, .. }
+                if matches!(
+                    source.get_transaction_error(),
+                    Some(ChainError::InsufficientFundsForFee)
+                ) =>
+            {
+                Self::InsufficientFundsForFee
+            }
+            ClientError::SolanaRpcTransaction { ref source, .. }
+                if matches!(
+                    source.get_transaction_error(),
+                    Some(ChainError::InsufficientFundsForRent { .. })
+                ) =>
+            {
+                Self::InsufficientFundsForRent
             }
             ClientError::ProofVerification(_) | ClientError::ProvingKeyMismatch { .. } => {
                 Self::ProofInvalid
@@ -270,6 +334,9 @@ pub(crate) fn client_message(error: &ClientError) -> String {
     redact_api_keys(&message)
 }
 
+/// `message` with the value of every `api-key` parameter replaced by
+/// `redacted`: up to `&`, `#`, `)`, `"` or whitespace. The Dart wallet masks
+/// URLs it refuses with the same rule.
 fn redact_api_keys(message: &str) -> String {
     const PARAMETER: &str = "api-key=";
     let mut redacted = String::with_capacity(message.len());
@@ -279,7 +346,7 @@ fn redact_api_keys(message: &str) -> String {
         redacted.push_str(head);
         redacted.push_str("redacted");
         let end = tail
-            .find(|c: char| c == '&' || c == ')' || c == '"' || c.is_whitespace())
+            .find(|c: char| matches!(c, '&' | '#' | ')' | '"') || c.is_whitespace())
             .unwrap_or(tail.len());
         rest = &tail[end..];
     }
@@ -294,8 +361,8 @@ mod tests {
     #[test]
     fn masks_every_api_key_in_a_message() {
         assert_eq!(
-            redact_api_keys("url (https://h/?a=1&api-key=k&b=2) and api-key=k"),
-            "url (https://h/?a=1&api-key=redacted&b=2) and api-key=redacted"
+            redact_api_keys("url (https://h/?a=1&api-key=k&b=2) and api-key=k#f \"api-key=k\""),
+            "url (https://h/?a=1&api-key=redacted&b=2) and api-key=redacted#f \"api-key=redacted\""
         );
     }
 
@@ -344,6 +411,26 @@ mod tests {
                 asset: spr_transaction::SOL_MINT
             }),
             WalletError::NothingToMerge { mint: None }
+        );
+        let refused = |failure: ChainError| ClientError::SolanaRpcTransaction {
+            operation: "process_transaction",
+            source: failure.into(),
+        };
+        assert_eq!(
+            WalletError::from(refused(ChainError::InsufficientFundsForFee)),
+            WalletError::InsufficientFundsForFee
+        );
+        assert_eq!(
+            WalletError::from(refused(ChainError::InsufficientFundsForRent {
+                account_index: 2
+            })),
+            WalletError::InsufficientFundsForRent
+        );
+        assert_eq!(
+            WalletError::from(ClientError::Indexer(
+                "Nullifier leaf 1 is already used or queued for tree 2".into()
+            )),
+            WalletError::NotesAlreadySpent
         );
         assert!(matches!(
             WalletError::from(ClientError::Rpc("api-key=k".into())),

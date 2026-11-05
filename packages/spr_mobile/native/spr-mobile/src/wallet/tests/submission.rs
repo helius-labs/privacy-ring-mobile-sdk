@@ -252,10 +252,9 @@ fn historical_failure_takes_precedence_over_indexed_events() {
             serde_json::json!({"Err": "InsufficientFundsForFee"});
         failed
     });
-    assert!(
-        matches!(wallet.wait_for_transaction(signature.to_string(), Some(5)),
-            Err(WalletError::Client { message }) if message.contains("Insufficient funds for fee")
-        )
+    assert_eq!(
+        wallet.wait_for_transaction(signature.to_string(), Some(5)),
+        Err(WalletError::InsufficientFundsForFee)
     );
     assert_eq!(*asked.lock().unwrap(), ["getSignatureStatuses"]);
 }

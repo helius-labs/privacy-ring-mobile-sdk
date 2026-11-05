@@ -85,11 +85,11 @@ String friendlyError(Object error, {DemoAsset asset = sol}) {
     WalletError_TransactionExpired() =>
       "This payment didn't go through in time. Nothing was sent; try again.",
     WalletError_TransactionOutcomeUnknown() => "Couldn't tell whether this payment went through. Check activity before trying again.",
-    WalletError_Client(:final message)
-        when message.contains('already used or queued') =>
-      'Your balance just changed. Try again.',
-    WalletError_Client(:final message) when message.contains('insufficient') =>
-      'Not enough balance for this and its fees.',
+    WalletError_InsufficientFundsForFee() =>
+      'Not enough SOL for the network fee.',
+    WalletError_InsufficientFundsForRent() =>
+      "Not enough SOL for a new account's rent.",
+    WalletError_MergeExpired() => 'This merge expired. Prepare it again.',
     WalletError_Client(:final message) => message,
     final other => '$other',
   };

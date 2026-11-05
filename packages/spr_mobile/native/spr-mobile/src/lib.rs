@@ -116,16 +116,15 @@ pub fn poseidon_hash(inputs: Vec<Vec<u8>>) -> Result<Vec<u8>, WalletError> {
         .map_err(|failure| spr_client::ClientError::from(failure).into())
 }
 
-/// A proof by a [`LocalProver`] and where its time went, in milliseconds.
+/// A proof by a [`LocalProver`], verified before it is returned, and where
+/// its time went, in milliseconds.
 #[derive(Debug, Clone)]
 pub struct LocalProofResult {
     pub proof_json: String,
-    /// Every proof is verified before it is returned.
-    pub verified: bool,
     pub inputs: u32,
     pub outputs: u32,
-    pub proof_ms: u64,
     pub witness_ms: u64,
+    pub prove_ms: u64,
     pub verify_ms: u64,
     pub total_ms: u64,
 }
@@ -197,11 +196,10 @@ impl LocalProver {
         })?;
         Ok(LocalProofResult {
             proof_json: proof.proof_json.to_string(),
-            verified: true,
             inputs,
             outputs,
-            proof_ms: proof.prove_ms,
             witness_ms: proof.witness_ms,
+            prove_ms: proof.prove_ms,
             verify_ms: proof.verify_ms,
             total_ms: elapsed_ms(started),
         })

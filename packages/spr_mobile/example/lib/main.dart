@@ -292,9 +292,8 @@ class _ProofResult extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _Detail(label: 'Verified', value: proof.verified ? 'yes' : 'no'),
         _Detail(label: 'Circuit', value: '${proof.inputs}→${proof.outputs}'),
-        _Detail(label: 'Mopro proving', value: '${proof.proofMs} ms'),
+        _Detail(label: 'Proving', value: '${proof.proveMs} ms'),
         _Detail(label: 'Witness preparation', value: '${proof.witnessMs} ms'),
         _Detail(label: 'Verification', value: '${proof.verifyMs} ms'),
         _Detail(label: 'Proof JSON', value: _short(proof.proofJson)),

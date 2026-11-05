@@ -557,26 +557,23 @@ class CacheTarget {
           computeUnitLimit == other.computeUnitLimit;
 }
 
-/// A proof by a [`LocalProver`] and where its time went, in milliseconds.
+/// A proof by a [`LocalProver`], verified before it is returned, and where
+/// its time went, in milliseconds.
 class LocalProofResult {
   final String proofJson;
-
-  /// Every proof is verified before it is returned.
-  final bool verified;
   final int inputs;
   final int outputs;
-  final BigInt proofMs;
   final BigInt witnessMs;
+  final BigInt proveMs;
   final BigInt verifyMs;
   final BigInt totalMs;
 
   const LocalProofResult({
     required this.proofJson,
-    required this.verified,
     required this.inputs,
     required this.outputs,
-    required this.proofMs,
     required this.witnessMs,
+    required this.proveMs,
     required this.verifyMs,
     required this.totalMs,
   });
@@ -584,11 +581,10 @@ class LocalProofResult {
   @override
   int get hashCode =>
       proofJson.hashCode ^
-      verified.hashCode ^
       inputs.hashCode ^
       outputs.hashCode ^
-      proofMs.hashCode ^
       witnessMs.hashCode ^
+      proveMs.hashCode ^
       verifyMs.hashCode ^
       totalMs.hashCode;
 
@@ -598,11 +594,10 @@ class LocalProofResult {
       other is LocalProofResult &&
           runtimeType == other.runtimeType &&
           proofJson == other.proofJson &&
-          verified == other.verified &&
           inputs == other.inputs &&
           outputs == other.outputs &&
-          proofMs == other.proofMs &&
           witnessMs == other.witnessMs &&
+          proveMs == other.proveMs &&
           verifyMs == other.verifyMs &&
           totalMs == other.totalMs;
 }
@@ -1488,6 +1483,21 @@ sealed class WalletError with _$WalletError implements FrbException {
   const factory WalletError.notesReserved({required BigInt amount}) =
       WalletError_NotesReserved;
 
+  /// The fee payer's SOL does not cover the transaction's network fee.
+  const factory WalletError.insufficientFundsForFee() =
+      WalletError_InsufficientFundsForFee;
+
+  /// An account the transaction writes would be left below its
+  /// rent-exempt minimum, such as a token account it creates that the fee
+  /// payer's SOL cannot fund.
+  const factory WalletError.insufficientFundsForRent() =
+      WalletError_InsufficientFundsForRent;
+
+  /// The transaction exceeds Solana's size or account limits. Prepare it
+  /// with fewer inputs.
+  const factory WalletError.transactionTooLarge() =
+      WalletError_TransactionTooLarge;
+
   /// `recipient` has not registered a shielded address. A public output
   /// pays it publicly.
   const factory WalletError.recipientNotRegistered({
@@ -1676,6 +1686,65 @@ sealed class WalletError with _$WalletError implements FrbException {
 
   /// The wallet was closed.
   const factory WalletError.walletClosed() = WalletError_WalletClosed;
+
+  /// The priority fee `fee` exceeds `max`, the sponsored run's
+  /// [`CacheTarget::max_priority_fee_lamports`](crate::CacheTarget::max_priority_fee_lamports).
+  const factory WalletError.priorityFeeTooHigh({
+    required BigInt fee,
+    required BigInt max,
+  }) = WalletError_PriorityFeeTooHigh;
+
+  /// The cache target's slot or compute unit limit is out of range.
+  const factory WalletError.cacheTargetInvalid() =
+      WalletError_CacheTargetInvalid;
+
+  /// The sponsored run's cache is past its `expires_at`. Start another run.
+  const factory WalletError.cacheExpired() = WalletError_CacheExpired;
+
+  /// The run's cache account does not exist yet or was closed: its merge
+  /// has not confirmed, or the run ended.
+  const factory WalletError.cacheUnavailable() = WalletError_CacheUnavailable;
+
+  /// The cache account does not match the run's terms, or a slot does not
+  /// hold the merge output the wallet predicted.
+  const factory WalletError.cacheMismatch() = WalletError_CacheMismatch;
+
+  /// A cached output is another wallet's or another mint's, does not match
+  /// its commitment, or shares a slot or a cache wrongly with the other
+  /// inputs.
+  const factory WalletError.cachedOutputInvalid() =
+      WalletError_CachedOutputInvalid;
+
+  /// The prepared cached merge's proof has expired. Prepare it again.
+  const factory WalletError.mergeExpired() = WalletError_MergeExpired;
+
+  /// The merge names `count` input ids, outside 2 to `max`.
+  const factory WalletError.mergeInputCountInvalid({
+    required BigInt count,
+    required BigInt max,
+  }) = WalletError_MergeInputCountInvalid;
+
+  /// `id` is not a note id (64 lowercase hex characters), or repeats one.
+  const factory WalletError.noteIdInvalid({required String id}) =
+      WalletError_NoteIdInvalid;
+
+  /// The note `id` is no longer among the wallet's notes: spent, or not
+  /// indexed. Plan the merge again.
+  const factory WalletError.mergeInputUnavailable({required String id}) =
+      WalletError_MergeInputUnavailable;
+
+  /// The note `id` is not a nonzero plain note on the cache target's tree.
+  const factory WalletError.mergeInputInvalid({required String id}) =
+      WalletError_MergeInputInvalid;
+
+  /// A prepared-transaction snapshot is too large, malformed or of
+  /// another version, or this wallet on this deployment did not export it.
+  const factory WalletError.snapshotInvalid() = WalletError_SnapshotInvalid;
+
+  /// The call's arguments do not go together, as `message` says: a
+  /// programming error.
+  const factory WalletError.invalidArguments({required String message}) =
+      WalletError_InvalidArguments;
 
   /// Any other failure of the Zolana client: the error and its causes,
   /// without key material, with `api-key` values masked.

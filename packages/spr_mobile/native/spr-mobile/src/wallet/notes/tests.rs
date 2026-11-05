@@ -54,12 +54,19 @@ fn descriptions_keep_tree_and_mint_and_exclude_unavailable_notes() {
 fn exact_selection_does_not_substitute_missing_reserved_or_ineligible_notes() {
     let ids = [[1; 32], [2; 32]];
     let notes = [note(10, 1, 0), note(20, 2, 0), note(1, 3, 0)];
-    assert!(select_merge_inputs(notes[1..].iter(), &ids, 0, &HashSet::new()).is_err());
+    let id = |hash: u8| hex::encode([hash; 32]);
+    assert_eq!(
+        select_merge_inputs(notes[1..].iter(), &ids, 0, &HashSet::new()).unwrap_err(),
+        WalletError::MergeInputUnavailable { id: id(1) }
+    );
     assert_eq!(
         select_merge_inputs(notes.iter(), &ids, 0, &HashSet::from([[2; 32]])).unwrap_err(),
         WalletError::NotesReserved { amount: 20 }
     );
-    assert!(select_merge_inputs(notes.iter(), &ids, 1, &HashSet::new()).is_err());
+    assert_eq!(
+        select_merge_inputs(notes.iter(), &ids, 1, &HashSet::new()).unwrap_err(),
+        WalletError::MergeInputInvalid { id: id(1) }
+    );
     for kind in 0..4 {
         let mut notes = notes.clone();
         match kind {
@@ -68,7 +75,10 @@ fn exact_selection_does_not_substitute_missing_reserved_or_ineligible_notes() {
             2 => notes[1].ring_data_hash = Some([1; 32]),
             _ => notes[1].utxo.ring_program_id = Some(Pubkey::new_unique()),
         }
-        assert!(select_merge_inputs(notes.iter(), &ids, 0, &HashSet::new()).is_err());
+        assert_eq!(
+            select_merge_inputs(notes.iter(), &ids, 0, &HashSet::new()).unwrap_err(),
+            WalletError::MergeInputInvalid { id: id(2) }
+        );
     }
     let mut mixed = notes;
     mixed[1].utxo.asset = Mint::new(Pubkey::new_unique(), 7);
@@ -84,16 +94,25 @@ fn input_ids_are_bounded_canonical_and_unique() {
     let ids: Vec<_> = (1..=51).map(|id| hex::encode([id; 32])).collect();
     assert_eq!(merge_input_ids(&ids).unwrap().len(), 51);
     assert_eq!(merge_input_ids(&ids[..2]).unwrap(), [[1; 32], [2; 32]]);
-    for invalid in [
-        vec![],
-        ids[..1].to_vec(),
-        vec![ids[0].clone(); 2],
-        vec![ids[0].clone(); 52],
-        vec!["AB".repeat(32), ids[0].clone()],
-        vec!["0".repeat(63), ids[0].clone()],
-        vec!["gg".repeat(32), ids[0].clone()],
+    for count in [0, 1, 52] {
+        assert_eq!(
+            merge_input_ids(&vec![ids[0].clone(); count]).unwrap_err(),
+            WalletError::MergeInputCountInvalid {
+                count: count as u64,
+                max: 51
+            }
+        );
+    }
+    for id in [
+        ids[0].clone(),
+        "AB".repeat(32),
+        "0".repeat(63),
+        "gg".repeat(32),
     ] {
-        assert!(merge_input_ids(&invalid).is_err());
+        assert_eq!(
+            merge_input_ids(&[id.clone(), ids[0].clone()]).unwrap_err(),
+            WalletError::NoteIdInvalid { id }
+        );
     }
 }
 
