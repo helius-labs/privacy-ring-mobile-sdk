@@ -227,10 +227,27 @@ await wallet.spend(
   deposits, received notes, merges, default-ring sends with authenticatable
   recipient outputs, and public withdrawals without first scanning its input
   notes. Missing settlement metadata, unsupported spend formats, and
-  recipient-tagged dummy padding return `incomplete`. The last case can occur
-  on an exact-balance private send with no change: a cold reader cannot tell
-  that padding from an unreadable recipient note. The method does not hide
-  that limitation behind a full-history scan.
+  recipient-tagged dummy padding without an opening return `incomplete`. The
+  last case can occur on an exact-balance private send with no change: a cold
+  reader cannot tell that padding from an unreadable recipient note.
+
+  For a payment the app prepared, retain its exported snapshot and pass the
+  prepared transaction (or its restored instance) to authenticate the padding:
+
+  ```dart
+  final details = await wallet.transaction(signature, prepared: payment);
+  ```
+
+  Each dummy opening must match the published commitment and tree. Recipient
+  outputs and public settlements still undergo the normal checks; saved amounts
+  are never used to guess a result. This also works after restoring a prepared
+  payment on a fresh wallet, without a history scan. Keep snapshots private.
+
+  `incomplete` describes activity details, not payment confirmation. Use
+  `confirm(payment, signature)` or `waitForTransaction(signature)` to recover
+  confirmation; do not rebuild or repay because activity details are unavailable.
+  If the snapshot is unavailable, `activity()` can reconstruct the wallet's
+  history from its input notes at the cost of a full scan.
 
   Every `ActivityEntry` from this method, `activity()` and `overview()` has
   `{signature, slot, index}`. `index` is the pool's immutable asset id (1 for

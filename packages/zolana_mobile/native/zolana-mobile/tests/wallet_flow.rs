@@ -305,8 +305,9 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             .expect("cold signature lookup");
         // Published padding names a participant. Without change of the
         // sender's own, an exact-balance send tags its dummy with the
-        // recipient, which a cold reader cannot authenticate as padding and
-        // reports as incomplete rather than guessing.
+        // recipient, which a signature alone cannot authenticate as padding:
+        // that lookup is incomplete, and the prepared spend's openings
+        // resolve it.
         let outputs = pending.outputs();
         let own_key = address.signing_pubkey.as_bytes().to_vec();
         let padded = outputs
@@ -321,6 +322,20 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             TransactionLookupStatus::Ready
         };
         assert_eq!(lookup.status, expected_status, "lookup after {operation:?}");
+        assert_eq!(lookup.entries.is_empty(), padded);
+        let lookup = if padded {
+            let lookup = cold
+                .transaction_with_prepared(signature.clone(), &pending)
+                .expect("cold lookup with the prepared openings");
+            assert_eq!(
+                lookup.status,
+                TransactionLookupStatus::Ready,
+                "prepared lookup after {operation:?}"
+            );
+            lookup
+        } else {
+            lookup
+        };
         let confirmed = SolanaRpc::new(required("ZOLANA_E2E_RPC_URL"))
             .client()
             .send::<EncodedConfirmedTransactionWithStatusMeta>(
@@ -354,7 +369,7 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             })
             .collect();
         let mut expected_outputs = Vec::new();
-        if let (false, Operation::Spend { mint, outputs, .. }) = (padded, &operation) {
+        if let Operation::Spend { mint, outputs, .. } = &operation {
             for output in outputs {
                 let (recipient, amount, is_public) = match output {
                     Output::Private { recipient, amount } if recipient != &owner.to_string() => {
@@ -394,14 +409,6 @@ fn submit(wallet: &MobileWallet, signers: &[&Keypair], pending: PreparedTransact
             .contains(&method.as_str())),
             "a lookup must not scan history"
         );
-        if padded {
-            assert!(lookup.entries.is_empty());
-            println!(
-                "cold lookup {signature} is incomplete for recipient-tagged padding, time {:?}, fee {:?}",
-                lookup.block_time, lookup.fee,
-            );
-            return signature;
-        }
         let expected = cold
             .activity()
             .unwrap()
@@ -1213,7 +1220,7 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
             .map(|pending| pending.cached_output().unwrap())
             .collect();
         let total: u64 = cached.iter().map(|output| output.amount()).sum();
-        let amount = total / 4;
+        let amount = total / 2;
         let outputs = vec![
             Output::Private {
                 recipient: recipient.pubkey().to_string(),
@@ -1221,7 +1228,7 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
             },
             Output::Public {
                 recipient: owner.pubkey().to_string(),
-                amount,
+                amount: total - amount,
             },
         ];
         let payment = wallet
@@ -1233,7 +1240,42 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
         drop(wallet);
         wallet = open(&owner);
         let payment = wallet.restore_prepared_transaction(saved).unwrap();
-        let signature = submit(&wallet, &[&owner], payment);
+        let before = wallet.private_balance(mint.clone()).unwrap();
+        let receiver_before = receiver.private_balance(mint.clone()).unwrap();
+        let signature = wallet
+            .submit(
+                &payment,
+                vec![owner.sign_message(&payment.message()).as_ref().to_vec()],
+            )
+            .expect("submit exact-cache-balance payment");
+        // A signature alone cannot authenticate recipient-tagged padding.
+        let lookup = wallet.transaction(signature.clone()).unwrap();
+        assert_eq!(lookup.status, TransactionLookupStatus::Incomplete);
+        assert!(lookup.entries.is_empty());
+        let lookup = wallet
+            .transaction_with_prepared(signature.clone(), &payment)
+            .unwrap();
+        assert_eq!(lookup.status, TransactionLookupStatus::Ready);
+        assert_eq!(lookup.entries.len(), 1);
+        assert_eq!(lookup.entries[0].signature, signature);
+        assert_eq!(lookup.entries[0].kind, ActivityKind::Sent);
+        assert_eq!(lookup.entries[0].mint, mint);
+        assert_eq!(lookup.entries[0].amount, total);
+        assert_eq!(
+            wallet.private_balance(mint.clone()).unwrap(),
+            before - total
+        );
+        assert_eq!(
+            receiver.private_balance(mint.clone()).unwrap(),
+            receiver_before + amount
+        );
+        newest_of(
+            &mut wallet,
+            &signature,
+            ActivityKind::Sent,
+            mint.as_deref(),
+            total,
+        );
         println!(
             "cached send + withdrawal confirmed for {}: {signature}",
             mint.as_deref().unwrap_or("SOL")

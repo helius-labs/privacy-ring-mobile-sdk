@@ -1074,11 +1074,28 @@ impl MobileWallet {
     /// `Incomplete` reports unsupported spends or missing metadata rather than
     /// returning an incorrect empty result. Recipient-tagged dummy padding
     /// (possible on an exact-balance private send) is also incomplete: a cold
-    /// reader cannot authenticate it as padding without input-note history.
-    /// Only `Ready` with no entries means
-    /// there are no activity rows for this wallet's configured assets.
+    /// reader cannot authenticate it as padding without an output opening.
+    /// Use [`Self::transaction_with_prepared`] when the prepared spend was
+    /// saved. Only `Ready` with no entries means there are no activity rows
+    /// for this wallet's configured assets.
     pub fn transaction(&self, signature: String) -> Result<TransactionLookup, WalletError> {
-        lookup::transaction(self, signature)
+        lookup::transaction(self, signature, None)
+    }
+
+    /// Like [`Self::transaction`], with output openings from a prepared spend
+    /// (including one restored after restart). Matching dummy commitments let
+    /// an exact-balance send be read without input-note history. Other outputs
+    /// and public settlements are verified as usual; saved amounts are not
+    /// used to infer the result. Unmatched openings cannot hide unreadable
+    /// outputs.
+    ///
+    /// This reads activity details; use [`Self::confirm`] to confirm a payment.
+    pub fn transaction_with_prepared(
+        &self,
+        signature: String,
+        pending: &PreparedTransaction,
+    ) -> Result<TransactionLookup, WalletError> {
+        lookup::transaction(self, signature, Some(pending))
     }
 
     /// Build and prove a spend of `mint` (SOL for `None`) to `outputs`, in

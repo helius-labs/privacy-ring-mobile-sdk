@@ -73,6 +73,8 @@ struct Fixture {
     registry: AssetRegistry,
     notes: Vec<WalletUtxo>,
     records: HashMap<Pubkey, zolana_user_registry_interface::UserRecord>,
+    /// The spend's outputs, as its prepared transaction keeps them.
+    openings: Vec<OutputOpening>,
 }
 
 impl Fixture {
@@ -187,6 +189,11 @@ impl Fixture {
         }
         let inputs = transaction.encrypt(&sender.keys).unwrap();
         let tree_id = inputs.output_tree_id;
+        let openings = inputs
+            .output_utxos
+            .iter()
+            .map(|output| OutputOpening::from_output(output, tree_id))
+            .collect();
         // Read back only wire-visible data, just as the indexer does.
         let data = TransactIxData {
             expiry_unix_ts: u64::MAX,
@@ -329,7 +336,15 @@ impl Fixture {
             registry,
             notes,
             records,
+            openings,
         }
+    }
+
+    /// A prepared spend holding this fixture's output openings.
+    fn prepared(&self, signer: &Keypair) -> PreparedTransaction {
+        let mut pending = crate::wallet::tests::unsigned(signer);
+        pending.outputs = self.openings.clone();
+        pending
     }
 
     fn scan(&self, owner: &MobileWallet) -> UtxoScanResult {
@@ -1102,6 +1117,7 @@ fn a_cold_wallet_reads_a_merge_as_a_self_transfer() {
         registry: fixture.registry.clone(),
         notes: fixture.notes.clone(),
         records: fixture.records.clone(),
+        openings: fixture.openings.clone(),
     };
     corrupt.events[0].output_slots[0].output_context.hash = [0; 32];
     let signature = fixture.signature.to_string();
@@ -1132,6 +1148,135 @@ fn a_full_private_send_with_recipient_tagged_padding_is_explicitly_incomplete() 
     let signature = fixture.signature.to_string();
     let (wallet, _) = fixture.open(&sender);
     let result = wallet.transaction(signature).unwrap();
+    assert_eq!(result.status, Status::Incomplete);
+    assert!(result.entries.is_empty());
+}
+
+#[test]
+fn padding_openings_resolve_exact_balance_payments_without_history() {
+    let sender = Keypair::new();
+    let recipient = Keypair::new();
+    for cached in [false, true] {
+        for (private, withdrawal) in [(100, 0), (50, 50)] {
+            for mint in [Mint::SOL, Mint::new(Pubkey::new_unique(), 7)] {
+                let fixture = Fixture::spend_with_cache(
+                    &identity(&sender),
+                    &identity(&recipient),
+                    private,
+                    withdrawal,
+                    &[mint],
+                    cached,
+                );
+                let signature = fixture.signature.to_string();
+                let pending = fixture.prepared(&sender);
+                let (wallet, _) = fixture.open(&sender);
+                let result = wallet
+                    .transaction_with_prepared(signature.clone(), &pending)
+                    .unwrap();
+                assert_eq!(result.status, Status::Ready);
+                assert_eq!(result.entries.len(), 1);
+                let entry = &result.entries[0];
+                assert_eq!(entry.kind, ActivityKind::Sent);
+                assert_eq!(entry.amount, 100);
+                assert_eq!(entry.mint, crate::asset::mint_name(&mint.asset));
+                assert_eq!(entry.signature, signature);
+                assert_eq!(entry.slot, 10);
+                assert_eq!(
+                    result
+                        .outputs
+                        .iter()
+                        .map(|output| output.amount)
+                        .sum::<u64>(),
+                    100
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn padding_openings_cannot_hide_missing_or_tampered_details() {
+    let sender = Keypair::new();
+    let recipient = Keypair::new();
+    for mutation in 0..6 {
+        let mut fixture = Fixture::spend(
+            &identity(&sender),
+            &identity(&recipient),
+            100,
+            0,
+            &[Mint::SOL],
+        );
+        let mut pending = fixture.prepared(&sender);
+        let dummy = pending
+            .outputs
+            .iter()
+            .position(|output| output.owner_signing_key.is_none() && output.amount == 0)
+            .unwrap();
+        match mutation {
+            0 => pending.outputs[dummy].blinding[31] ^= 1,
+            1 => {
+                pending = Fixture::spend(
+                    &identity(&sender),
+                    &identity(&recipient),
+                    100,
+                    0,
+                    &[Mint::SOL],
+                )
+                .prepared(&sender)
+            }
+            2 => fixture.chain = Value::Null,
+            3 => fixture.records.clear(),
+            4 => {
+                // A real output cannot open under the dummy commitment domain.
+                let real = pending
+                    .outputs
+                    .iter()
+                    .find(|output| output.owner_signing_key.is_some())
+                    .unwrap()
+                    .blinding
+                    .clone();
+                let mut false_padding = pending.outputs[dummy].clone();
+                false_padding.blinding = real;
+                pending.outputs.push(false_padding);
+                fixture
+                    .records
+                    .values_mut()
+                    .next()
+                    .unwrap()
+                    .nullifier_pubkey = [0; 32];
+            }
+            _ => fixture.events[0].output_slots[0].payload[10] ^= 1,
+        }
+        let signature = fixture.signature.to_string();
+        let (wallet, _) = fixture.open(&sender);
+        let result = wallet
+            .transaction_with_prepared(signature, &pending)
+            .unwrap();
+        assert_eq!(result.status, Status::Incomplete, "mutation {mutation}");
+        assert!(result.entries.is_empty());
+    }
+}
+
+#[test]
+fn a_padding_opening_for_another_tree_cannot_hide_an_unreadable_slot() {
+    let sender = Keypair::new();
+    let recipient = Keypair::new();
+    let fixture = Fixture::spend(
+        &identity(&sender),
+        &identity(&recipient),
+        100,
+        0,
+        &[Mint::SOL],
+    );
+    let signature = fixture.signature.to_string();
+    let mut pending = fixture.prepared(&sender);
+    for opening in &mut pending.outputs {
+        opening.tree_id += 1;
+    }
+    let (wallet, _) = fixture.open(&sender);
+    let result = wallet
+        .transaction_with_prepared(signature, &pending)
+        .unwrap();
     assert_eq!(result.status, Status::Incomplete);
     assert!(result.entries.is_empty());
 }

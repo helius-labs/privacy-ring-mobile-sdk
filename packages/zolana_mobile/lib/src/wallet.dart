@@ -299,8 +299,23 @@ class ZolanaWallet {
   /// [native.TransactionLookup.outputs] separate private payments, including
   /// application fees, from public withdrawals, excluding change and padding.
   /// Public SPL recipients are settlement token accounts.
-  Future<native.TransactionLookup> transaction(String signature) =>
-      _serial(() => _wallet.transaction(signature: signature));
+  ///
+  /// Supply [prepared], including a restored spend, to authenticate dummy
+  /// padding on exact-balance payments. Each padding commitment is verified;
+  /// saved amounts do not substitute for on-chain details. Without these
+  /// openings, an exact-balance send may return `incomplete`. This status
+  /// describes activity details, not confirmation of the payment.
+  Future<native.TransactionLookup> transaction(
+    String signature, {
+    native.PreparedTransaction? prepared,
+  }) => _serial(
+    () => prepared == null
+        ? _wallet.transaction(signature: signature)
+        : _wallet.transactionWithPrepared(
+            signature: signature,
+            pending: prepared,
+          ),
+  );
 
   /// [balances] and [activity] from one read of the indexer, which each of
   /// them makes on its own, and the assets of notes the read could not count.
