@@ -9,7 +9,7 @@ const downloadAttempts = 5;
 
 /// `GET url`, retried on what fails now and then: a reset or dropped
 /// connection, a timeout, 429 and 5xx. A precompiled binary that fails to
-/// download makes the plugin build from source, which needs Rust and Go, so a
+/// download makes the plugin build from source, which needs Rust, so a
 /// passing blip must not end the download. Other statuses, 404 among them, are
 /// returned as they are.
 Future<Response> getWithRetry(
