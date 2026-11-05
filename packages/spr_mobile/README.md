@@ -34,12 +34,8 @@ being verified. Missing policy raises `WalletError.proverPolicyMissing` before
 HTTP for remote URLs; `requireProverTee: true` enforces this for loopback too.
 Local proving needs no policy.
 
-This upgrade keeps program IDs, notes and snapshot version 2 unchanged. The
-finalized ceremony keys replace older transfer and merge keys; the key store
-invalidates old keys, and proofs prepared with old keys must be rebuilt before
-submission. Earlier program IDs still require their matching SDK and deployment
-for recovery. The public-seed Flutter example remains devnet-only; supply your
-own signer and mainnet endpoints when selecting `ProverTeeNetwork.mainnet`.
+The public-seed Flutter example is devnet-only; supply your own signer and
+mainnet endpoints when selecting `ProverTeeNetwork.mainnet`.
 
 **Performance.** The native prover at four threads on an Apple M5 Pro proves a warm spend (key loaded) in 0.17 s for one note to two outputs, 0.27 s for two, 0.55 s for four, 0.92 s for eight, 1.7 s for sixteen and 2.7 s for twenty-four; a restart adds the key's load from its mapped image (tens of milliseconds there), and the first run its download (9 MB to 180 MB). On phones, in release builds, one note proves in 0.18 s on a Samsung Galaxy S25, 0.21 s on an iPhone 17 Pro, 0.30 s to 0.35 s on an iPhone 15, an iPhone 12 and a Galaxy A56, and 1.2 s on a Galaxy A16; eight notes in 1.2 s to 2.0 s, 7.0 s on the A16; twenty-four in 3.6 s to 5.9 s, 25 s on the A16. A key loads from its image in under 0.3 s, up to 0.74 s on the A16. CI benches release builds on these six phones for every pull request and keeps the history of `main` on the [`proof-timing`](https://github.com/helius-labs/zolana-mobile-sdk/tree/proof-timing) branch; "Proof timing" below describes the harness.
 
@@ -439,8 +435,6 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `transportFailed` | `message` | the Solana RPC client could not be built |
 | `signatureInvalid` | | a signature is malformed or not the signer's over the message |
 | `signatureCountMismatch` | `expected`, `got` | `submit` received the wrong number of signatures |
-| `transactionNotConfirmed` | `signature` | Solana did not confirm the transaction within the wait |
-| `transactionExpired` | `signature` | retained for compatibility; missing history after expiry now returns `transactionOutcomeUnknown` |
 | `transactionOutcomeUnknown` | `signature`, `message` | a send went unanswered and whether it landed could not be told; wait for it before sending it again |
 | `remoteProverMissing` | | the spend asked for remote proving without `WalletConfig.proverUrl` |
 | `proofMalformed` | | the remote prover's response is not a proof of the pinned proving key |
@@ -757,9 +751,8 @@ The [runnable proxy/relayer example](example/backend/README.md) includes
 `x-sf-auth`, synchronous and queued TEE merge routes, persistent run recovery and a Flutter entry
 point (`example/lib/main_sponsored.dart`). Both use upstream
 `c5297afa13e8bfb6edadf6408304ef3fc2f8c676` and the artifacts in
-this checkout. These mobile APIs are unreleased; e30b328a does not expose them.
-See the example for migration boundaries, trusted TEE policy configuration and
-the production responsibilities it intentionally leaves to the client backend.
+this checkout. See the example for trusted TEE policy configuration and the
+production responsibilities it leaves to the client backend.
 
 ### Backend proving
 
