@@ -2,6 +2,19 @@
 
 Unreleased.
 
+* Report failures an application can act on as their own `WalletError`
+  variants: `insufficientFundsForFee`, `insufficientFundsForRent`,
+  `transactionTooLarge`, `priorityFeeTooHigh`, the sponsored cache's
+  `cacheTargetInvalid`, `cacheExpired`, `cacheUnavailable`, `cacheMismatch`,
+  `cachedOutputInvalid` and `mergeExpired`, the merge inputs'
+  `mergeInputCountInvalid`, `noteIdInvalid`, `mergeInputUnavailable` and
+  `mergeInputInvalid`, `snapshotInvalid`, and `invalidArguments` for
+  arguments that do not go together.
+* `LocalProofResult` reports the proof's time as `proveMs`, as
+  `ProvedRequest` does; every proof it returns is verified.
+* The `backend` parameter of `SprWallet.open` and `openWithKeys` is for
+  tests only.
+
 * Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
   `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
   verified by the same pinned signers. It needs `proverTeeNetwork`; a plain

@@ -22,36 +22,52 @@ fn cache_terms_fail_before_network_or_proof() {
     let mut wallet = open(&Keypair::new()).unwrap();
     let mut terms = target();
     terms.slot = CACHE_CAPACITY as u8;
-    assert!(wallet
-        .prepare_cached_merge(terms, None, None, None, None, None)
-        .is_err());
+    assert_eq!(
+        wallet
+            .prepare_cached_merge(terms, None, None, None, None, None)
+            .err(),
+        Some(WalletError::CacheTargetInvalid)
+    );
     let mut terms = target();
     terms.expires_at = now() - 1;
-    assert!(wallet
-        .prepare_cached_merge(terms, None, None, None, None, None)
-        .is_err());
-    assert!(wallet
-        .prepare_cached_merge(target(), None, None, None, Some(5_001), None)
-        .is_err());
+    assert_eq!(
+        wallet
+            .prepare_cached_merge(terms, None, None, None, None, None)
+            .err(),
+        Some(WalletError::CacheExpired)
+    );
+    assert_eq!(
+        wallet
+            .prepare_cached_merge(target(), None, None, None, Some(5_001), None)
+            .err(),
+        Some(WalletError::PriorityFeeTooHigh {
+            fee: 5_001,
+            max: 5_000
+        })
+    );
     let ids = Some(vec![hex::encode([1; 32]), hex::encode([2; 32])]);
     for (mint, max_inputs) in [
         (Some(Pubkey::new_unique().to_string()), None),
         (None, Some(2)),
     ] {
-        assert!(wallet
-            .prepare_cached_merge(target(), mint, max_inputs, None, None, ids.clone())
-            .is_err());
+        assert!(matches!(
+            wallet.prepare_cached_merge(target(), mint, max_inputs, None, None, ids.clone()),
+            Err(WalletError::InvalidArguments { .. })
+        ));
     }
-    assert!(wallet
-        .prepare_cached_merge(
-            target(),
-            None,
-            None,
-            None,
-            None,
-            Some(vec![hex::encode([1; 32])])
-        )
-        .is_err());
+    assert_eq!(
+        wallet
+            .prepare_cached_merge(
+                target(),
+                None,
+                None,
+                None,
+                None,
+                Some(vec![hex::encode([1; 32])])
+            )
+            .err(),
+        Some(WalletError::MergeInputCountInvalid { count: 1, max: 51 })
+    );
 }
 
 #[test]
@@ -79,14 +95,18 @@ fn snapshots_authenticate_message_metadata_wallet_and_restore_reservations() {
     assert_eq!(duplicate.id, restored.id);
     assert_eq!(reopened.reservations().reserved.len(), 1);
     let other = open(&Keypair::new()).unwrap();
-    assert!(other
-        .restore_prepared_transaction(snapshot.clone())
-        .is_err());
+    assert_eq!(
+        other.restore_prepared_transaction(snapshot.clone()).err(),
+        Some(WalletError::SnapshotInvalid)
+    );
     let mut envelope: Envelope = serde_json::from_str(&snapshot).unwrap();
     envelope.payload = envelope.payload.replace("123", "124");
-    assert!(reopened
-        .restore_prepared_transaction(serde_json::to_string(&envelope).unwrap())
-        .is_err());
+    assert_eq!(
+        reopened
+            .restore_prepared_transaction(serde_json::to_string(&envelope).unwrap())
+            .err(),
+        Some(WalletError::SnapshotInvalid)
+    );
     // A different signed message may spend the same inputs. Releasing
     // the first must not release the second after a restart.
     pending.message.set_recent_blockhash([8; 32].into());
@@ -147,14 +167,25 @@ fn cache_reads_check_owner_terms_commitments_and_duplicate_slots() {
         json!({"result":shared.lock().unwrap().clone()})
     });
     wallet.verify_cached_outputs(vec![output.clone()]).unwrap();
-    assert!(wallet
-        .verify_cached_outputs(vec![output.clone(), output.clone()])
-        .is_err());
+    assert_eq!(
+        wallet
+            .verify_cached_outputs(vec![output.clone(), output.clone()])
+            .unwrap_err(),
+        WalletError::CachedOutputInvalid
+    );
     let mut changed = output.clone();
     changed.commitment[0] ^= 1;
-    assert!(wallet.verify_cached_outputs(vec![changed]).is_err());
+    assert_eq!(
+        wallet.verify_cached_outputs(vec![changed]).unwrap_err(),
+        WalletError::CachedOutputInvalid
+    );
     response.lock().unwrap()["value"]["owner"] = json!(Pubkey::new_unique().to_string());
-    assert!(wallet.verify_cached_outputs(vec![output.clone()]).is_err());
+    assert_eq!(
+        wallet
+            .verify_cached_outputs(vec![output.clone()])
+            .unwrap_err(),
+        WalletError::CacheMismatch
+    );
     *response.lock().unwrap() = value;
     let mut pending = unsigned(&signer);
     pending.cached_output = Some(output.clone());

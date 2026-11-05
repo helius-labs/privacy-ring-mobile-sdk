@@ -6,6 +6,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:spr_mobile/src/backend.dart';
 import 'package:spr_mobile/src/http_transport.dart';
 import 'package:spr_mobile/src/rust/third_party/spr_mobile.dart'
     show MobileWallet, PreparedTransaction, ProvingKeys, TransportOutcome;

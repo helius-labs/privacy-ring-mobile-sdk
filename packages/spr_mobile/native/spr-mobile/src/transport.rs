@@ -190,12 +190,12 @@ impl Transport {
         sync_only: bool,
     ) -> Result<ProverClient, WalletError> {
         if policy_json.is_some() && network.is_some() {
-            return Err(WalletError::Client {
+            return Err(WalletError::InvalidArguments {
                 message: "choose proverTeeNetwork or proverTeePolicy, not both".into(),
             });
         }
         if policy_url.is_some() && network.is_none() {
-            return Err(WalletError::Client {
+            return Err(WalletError::InvalidArguments {
                 message: "proverTeePolicyUrl needs proverTeeNetwork, whose signers verify it"
                     .into(),
             });
@@ -768,7 +768,7 @@ mod proxy_tests {
                     Some(url),
                     false,
                 ),
-                Err(WalletError::Client { .. })
+                Err(WalletError::Client { .. } | WalletError::InvalidArguments { .. })
             ));
             assert!(requests.lock().unwrap().is_empty());
         }

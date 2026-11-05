@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
+import 'backend.dart';
 import 'http_transport.dart';
-import 'rust/third_party/spr_mobile.dart' as native;
-import 'rust/third_party/spr_mobile.dart' show PreparedTransaction, WalletError;
+import 'rust/third_party/spr_mobile.dart';
 
 /// Signs as one Solana account: a platform keystore, a wallet adapter or a
 /// remote custodian. The Solana secret key never enters this package.
@@ -40,38 +42,15 @@ abstract interface class SolanaSigner {
 /// its stack trace. Throw a [TransportResponseLost] when the status arrived
 /// and the body could not be read: the wallet then does not send the request
 /// again, so a prover does not prove the spend twice. Stop reading and throw
-/// when a body exceeds [native.TransportRequest.maxResponseBytes]; the wallet
+/// when a body exceeds [TransportRequest.maxResponseBytes]; the wallet
 /// refuses a longer body either way. Bound each request by
-/// [native.TransportRequest.timeoutMs] when it is set (600 seconds for a
+/// [TransportRequest.timeoutMs] when it is set (600 seconds for a
 /// proof request), and by a timeout of your own otherwise: the wallet, and
 /// [SprWallet.close], wait for each answer, so the transport must not call
 /// the wallet either.
-typedef SprTransport = Future<native.TransportResponse> Function(
-  native.TransportRequest request,
+typedef SprTransport = Future<TransportResponse> Function(
+  TransportRequest request,
 );
-
-/// A [SprTransport] as the native wallet calls it: a failure is a message,
-/// never a throw.
-typedef NativeTransport = Future<native.TransportOutcome> Function(
-  native.TransportRequest request,
-);
-
-/// The native calls that open a [SprWallet]; replaced in tests.
-abstract interface class WalletBackend {
-  Future<Uint8List> derivationMessage(String solanaPubkey);
-  Future<native.MobileWallet> open(
-    native.WalletConfig config,
-    String solanaPubkey,
-    Uint8List derivationSignature,
-    NativeTransport transport,
-  );
-  Future<native.MobileWallet> openWithKeys(
-    native.WalletConfig config,
-    String solanaPubkey,
-    native.WalletKeys keys,
-    NativeTransport transport,
-  );
-}
 
 /// A private wallet for SOL and SPL tokens that proves on the device.
 ///
@@ -99,7 +78,7 @@ abstract interface class WalletBackend {
 /// [PreparedTransaction.lastValidBlockHeight]. Cached and restored preparations
 /// keep their reservations until release or a settled outcome. A spend
 /// that would need a reserved note fails with [WalletError.notesReserved];
-/// [native.TokenBalance.reserved] says how much the reserved notes hold.
+/// [TokenBalance.reserved] says how much the reserved notes hold.
 ///
 /// Every operation runs after the previous one finishes: the native wallet
 /// holds one proving key at a time. [close] it when the application locks or
@@ -120,8 +99,8 @@ class SprWallet {
   );
 
   final SolanaSigner? _signer;
-  final native.MobileWallet _wallet;
-  final native.ProvingKeys _keys;
+  final MobileWallet _wallet;
+  final ProvingKeys _keys;
 
   /// The package's transport, when the application passed none; closed with
   /// the wallet.
@@ -151,11 +130,11 @@ class SprWallet {
   /// it only for a test cluster. The wallet opens no connection itself either
   /// way.
   static Future<SprWallet> open({
-    required native.WalletConfig config,
+    required WalletConfig config,
     required SolanaSigner signer,
     SprTransport? transport,
     bool allowInsecureHttp = false,
-    WalletBackend backend = const _NativeBackend(),
+    @visibleForTesting WalletBackend backend = const NativeBackend(),
   }) async {
     if (transport == null) _refusePlaintext(config, allowInsecureHttp);
     final message = await backend.derivationMessage(signer.publicKey);
@@ -180,13 +159,13 @@ class SprWallet {
   /// [WalletError.signerMismatch].
   /// [transport] and [allowInsecureHttp] work as in [open].
   static Future<SprWallet> openWithKeys({
-    required native.WalletConfig config,
+    required WalletConfig config,
     required String solanaPublicKey,
-    required native.WalletKeys keys,
+    required WalletKeys keys,
     SolanaSigner? signer,
     SprTransport? transport,
     bool allowInsecureHttp = false,
-    WalletBackend backend = const _NativeBackend(),
+    @visibleForTesting WalletBackend backend = const NativeBackend(),
   }) async {
     if (signer != null && signer.publicKey != solanaPublicKey) {
       throw WalletError.signerMismatch(
@@ -210,10 +189,10 @@ class SprWallet {
     String solanaPublicKey,
     SolanaSigner? signer,
     SprTransport? transport,
-    Future<native.MobileWallet> Function(NativeTransport transport) open,
+    Future<MobileWallet> Function(NativeTransport transport) open,
   ) async {
     final http = transport == null ? HttpTransport() : null;
-    native.MobileWallet? wallet;
+    MobileWallet? wallet;
     try {
       wallet = await open(_nativeTransport(transport ?? http!.send));
       return SprWallet._(
@@ -234,38 +213,38 @@ class SprWallet {
   /// The keys [openWithKeys] opens this wallet from. They cannot move funds,
   /// but they show its balances and history and link its spends: keep them
   /// in the device's secure storage only, per account and network.
-  Future<native.WalletKeys> exportKeys() => _serial(_wallet.exportKeys);
+  Future<WalletKeys> exportKeys() => _serial(_wallet.exportKeys);
 
   /// Whether the user registry publishes [shieldedAddress]. A `conflict`
   /// means it holds other keys: payments to this account go to them, not to
   /// this wallet.
-  Future<native.RegistrationStatus> registrationStatus() =>
+  Future<RegistrationStatus> registrationStatus() =>
       _serial(_wallet.registrationStatus);
 
   /// Spendable private balances, read from the indexer now: one per asset
   /// held in SOL and the mints the wallet knows: those of
   /// `WalletConfig.mints`, or, without the list, the ones it has met.
   ///
-  /// Each [native.TokenBalance.amount] is what the indexer has confirmed,
-  /// [native.TokenBalance.reserved] included: the notes this wallet's
+  /// Each [TokenBalance.amount] is what the indexer has confirmed,
+  /// [TokenBalance.reserved] included: the notes this wallet's
   /// prepared spends hold, in memory, in this open wallet only. A payment or
   /// change on its way appears once its transaction is confirmed and
-  /// indexed. [native.TokenBalance.limits] says the most one spend can take
+  /// indexed. [TokenBalance.limits] says the most one spend can take
   /// now per proof width (2, 4, 8 or 16 outputs) without a merge, from the
   /// unreserved notes. A spend with `k` private outputs uses `k + 1` outputs,
   /// its change included, and public outputs take no slot: a withdrawal, a
   /// withdrawal with one private fee, or a send to one wallet reads the entry
   /// with `outputs: 2`, a send to one wallet with a fee the entry with
   /// `outputs: 4`. The limits include any application fee the spend pays.
-  Future<List<native.TokenBalance>> balances() => _serial(_wallet.balances);
+  Future<List<TokenBalance>> balances() => _serial(_wallet.balances);
 
   /// Read unreserved, nonzero default-ring notes from the indexer now.
   /// Each note has a stable commitment ID, mint, amount, tree and
-  /// [native.SpendableNote.mergeable] flag. Unresolved assets are omitted, as
+  /// [SpendableNote.mergeable] flag. Unresolved assets are omitted, as
   /// in [balances]. Listing does not reserve notes: restore pending
   /// transactions first, and prevent conflicting spends while planning a run.
   /// Keep IDs scoped to this wallet and deployment.
-  Future<List<native.SpendableNote>> spendableNotes() =>
+  Future<List<SpendableNote>> spendableNotes() =>
       _serial(_wallet.spendableNotes);
 
   /// Spendable private balance of [mint], read from the indexer now: zero
@@ -278,24 +257,24 @@ class SprWallet {
   /// wallet is listed as `sent`, for its whole total; one with only public
   /// outputs, whose notes are all this wallet's own, as `withdrawal`. The
   /// indexer does not say which spends were withdrawals. Each row includes
-  /// private [native.ActivityEntry.recipients] from non-own output tags.
-  /// [native.ActivityEntry.blockTime] is Unix seconds, fetched for a bounded
+  /// private [ActivityEntry.recipients] from non-own output tags.
+  /// [ActivityEntry.blockTime] is Unix seconds, fetched for a bounded
   /// number of the newest uncached slots per read. A slot without a
   /// timestamp leaves it `null`, asked for again after a growing wait,
   /// without failing the activity read.
-  Future<List<native.ActivityEntry>> activity() => _serial(_wallet.activity);
+  Future<List<ActivityEntry>> activity() => _serial(_wallet.activity);
 
   /// Fetch and decrypt every activity row for one signature, without scanning
   /// wallet history. May also read the confirmed transaction and asset or
   /// recipient registrations. Works for a freshly opened wallet.
   ///
-  /// Only [native.TransactionLookupStatus.ready] with an empty list means no
+  /// Only [TransactionLookupStatus.ready] with an empty list means no
   /// rows for the wallet's configured assets. Pending indexing, unavailable
   /// transactions and incomplete details have distinct statuses; network
   /// errors throw. Row identities match [activity] and [overview].
-  /// [native.TransactionLookup.blockTime] and [native.TransactionLookup.fee]
+  /// [TransactionLookup.blockTime] and [TransactionLookup.fee]
   /// come from the same RPC response (Unix seconds and lamports). Outgoing
-  /// [native.TransactionLookup.outputs] separate private payments, including
+  /// [TransactionLookup.outputs] separate private payments, including
   /// application fees, from public withdrawals, excluding change and padding.
   /// Public SPL recipients are settlement token accounts.
   ///
@@ -304,9 +283,9 @@ class SprWallet {
   /// saved amounts do not substitute for on-chain details. Without these
   /// openings, an exact-balance send may return `incomplete`. This status
   /// describes activity details, not confirmation of the payment.
-  Future<native.TransactionLookup> transaction(
+  Future<TransactionLookup> transaction(
     String signature, {
-    native.PreparedTransaction? prepared,
+    PreparedTransaction? prepared,
   }) => _serial(
     () => prepared == null
         ? _wallet.transaction(signature: signature)
@@ -318,9 +297,9 @@ class SprWallet {
 
   /// [balances] and [activity] from one read of the indexer, which each of
   /// them makes on its own, and the assets of notes the read could not count.
-  /// A non-empty [native.WalletOverview.unresolvedAssets] means the balances
+  /// A non-empty [WalletOverview.unresolvedAssets] means the balances
   /// and history are incomplete.
-  Future<native.WalletOverview> overview() => _serial(_wallet.overview);
+  Future<WalletOverview> overview() => _serial(_wallet.overview);
 
   /// Publish [shieldedAddress] so others can send to this wallet. `null` when
   /// it is already registered. Fails with [WalletError.registrationConflict]
@@ -399,22 +378,22 @@ class SprWallet {
     String? mint,
     int? maxInputs,
     String? feePayer,
-    native.Proving? proving,
+    Proving? proving,
     BigInt? priorityFeeLamports,
-    native.CacheTarget? cacheTarget,
+    CacheTarget? cacheTarget,
     List<String>? inputIds,
   }) {
     final ids = inputIds == null ? null : List<String>.of(inputIds);
     return _serial(() {
       if (ids != null &&
           (cacheTarget == null || mint != null || maxInputs != null)) {
-        throw const WalletError.client(
+        throw const WalletError.invalidArguments(
           message: 'inputIds requires cacheTarget and cannot be combined with mint or maxInputs',
         );
       }
       if (cacheTarget != null) {
         if (feePayer != null && feePayer != cacheTarget.sponsor) {
-          throw const WalletError.client(
+          throw const WalletError.invalidArguments(
             message: 'feePayer must match cache sponsor',
           );
         }
@@ -467,8 +446,8 @@ class SprWallet {
 
   /// Spend private funds of [mint] (SOL when null) to [outputs], each
   /// recipient a Solana public key, in one transaction and one proof. An
-  /// [native.Output_Private] is a note for a registered wallet; an
-  /// [native.Output_Public] moves funds to a Solana account, tokens to its
+  /// [Output_Private] is a note for a registered wallet; an
+  /// [Output_Public] moves funds to a Solana account, tokens to its
   /// associated token account. The application's own fee is one more private
   /// output, to its registered collector. Reads the spendable notes, takes
   /// the largest first, builds and proves on the device.
@@ -483,14 +462,14 @@ class SprWallet {
   /// shielded address, which a public output pays instead. A public token
   /// recipient without an associated token account gets one: the transaction
   /// creates it ahead of the spend, the fee payer pays its rent, and
-  /// [native.Operation_Spend.createdTokenAccounts] names the recipient. A
+  /// [Operation_Spend.createdTokenAccounts] names the recipient. A
   /// spend with `k` private outputs proves with
   /// `k + 1` outputs, its change included, and public outputs take no slot,
   /// so it takes at most 40 notes for `k <= 1`, 24 for `k <= 3`, 16 for
   /// `k <= 7` and 8 for `k <= 15`, within `WalletConfig.maxSpendInputs`.
   /// Past that it fails with [WalletError.mergeRequired], and with
   /// [WalletError.tooManyInputTrees] when the notes are on more than two
-  /// trees; [native.TokenBalance.limits] says what each width can take now.
+  /// trees; [TokenBalance.limits] says what each width can take now.
   ///
   /// [feePayer] (a Solana public key, such as the application's backend)
   /// pays the network fee instead of [solanaPublicKey]. The proof binds it,
@@ -511,16 +490,16 @@ class SprWallet {
   /// [WalletError.proofMalformed], a proof that does not verify with
   /// [WalletError.proofInvalid].
   Future<PreparedTransaction> prepareSpend({
-    required List<native.Output> outputs,
+    required List<Output> outputs,
     String? mint,
     String? feePayer,
-    native.Proving? proving,
+    Proving? proving,
     BigInt? priorityFeeLamports,
-    List<native.CachedOutput>? cachedInputs,
+    List<CachedOutput>? cachedInputs,
   }) => _serial(() {
     if (cachedInputs != null) {
-      if (proving == native.Proving.remote) {
-        throw const WalletError.client(
+      if (proving == Proving.remote) {
+        throw const WalletError.invalidArguments(
           message: 'cached payments must be proved locally',
         );
       }
@@ -546,14 +525,13 @@ class SprWallet {
   });
 
   /// Verify the expected commitments and run metadata on the confirmed cache.
-  Future<void> verifyCachedOutputs(List<native.CachedOutput> outputs) =>
-      _serial(
-        () => _wallet.verifyCachedOutputs(
-          // Vec<CachedOutput> transfers ownership across the native bridge.
-          // Keep the caller's handles usable for retries and payment approval.
-          outputs: [for (final output in outputs) output.copy()],
-        ),
-      );
+  Future<void> verifyCachedOutputs(List<CachedOutput> outputs) => _serial(
+    () => _wallet.verifyCachedOutputs(
+      // Vec<CachedOutput> transfers ownership across the native bridge.
+      // Keep the caller's handles usable for retries and payment approval.
+      outputs: [for (final output in outputs) output.copy()],
+    ),
+  );
 
   /// Sensitive, authenticated restart state; store in secure app storage.
   Future<String> exportPreparedTransaction(PreparedTransaction transaction) =>
@@ -665,7 +643,7 @@ class SprWallet {
   Future<String> merge({
     String? mint,
     int? maxInputs,
-    native.Proving? proving,
+    Proving? proving,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _send(
@@ -695,9 +673,9 @@ class SprWallet {
 
   /// [prepareSpend], signed and submitted by this account.
   Future<String> spend({
-    required List<native.Output> outputs,
+    required List<Output> outputs,
     String? mint,
-    native.Proving? proving,
+    Proving? proving,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _send(
@@ -732,7 +710,7 @@ class SprWallet {
 
   /// The proving keys this wallet proves with on the device, smallest
   /// first, with how much of each is downloaded. Reads only file sizes.
-  Future<List<native.ProvingKeyStatus>> provingKeys() {
+  Future<List<ProvingKeyStatus>> provingKeys() {
     _ensureOpen();
     return _keys.status();
   }
@@ -750,13 +728,13 @@ class SprWallet {
   /// a key it is downloading waits for it. A failure, such as
   /// [WalletError.provingKeyDownloadFailed], ends the stream with a
   /// [WalletError].
-  Stream<native.ProvingKeyProgress> prefetchProvingKeys({
+  Stream<ProvingKeyProgress> prefetchProvingKeys({
     required int maxInputs,
     List<int> outputs = const [2],
     int maxMergeInputs = 0,
   }) {
     var stopped = false;
-    late final StreamController<native.ProvingKeyProgress> updates;
+    late final StreamController<ProvingKeyProgress> updates;
     updates = StreamController(
       onListen: () async {
         try {
@@ -800,20 +778,17 @@ class SprWallet {
   /// the time went, so an application can time proofs on a device with the
   /// fixed requests of `fixtures/` (see the README, "Proof timing"). Runs
   /// after the wallet's other calls, like them.
-  Future<native.ProvedRequest> proveRequest({
+  Future<ProvedRequest> proveRequest({
     required String keyName,
     required String requestJson,
   }) => _serial(() => _keys.prove(keyName: keyName, requestJson: requestJson));
 
   /// The transaction [prepared] built, unless the wallet was closed while it
   /// was being built.
-  Future<T> _prepare<T extends PreparedTransaction?>(
-    Future<T> prepared,
-  ) async => _opened(await prepared);
-
-  T _opened<T>(T value) {
+  Future<T> _prepare<T extends PreparedTransaction?>(Future<T> prepared) async {
+    final transaction = await prepared;
     _ensureOpen();
-    return value;
+    return transaction;
   }
 
   Future<String> _send(Future<PreparedTransaction> prepared) async =>
@@ -871,17 +846,17 @@ class SprWallet {
 /// the Dart stack trace with it, and the wallet's callback cannot fail.
 NativeTransport _nativeTransport(SprTransport send) => (request) async {
   try {
-    return native.TransportOutcome(response: await send(request));
+    return TransportOutcome(response: await send(request));
   } on TransportResponseLost catch (lost) {
-    return native.TransportOutcome(
-      failure: native.TransportFailure(
+    return TransportOutcome(
+      failure: TransportFailure(
         message: _message(lost.cause),
         status: lost.status,
       ),
     );
   } catch (error) {
-    return native.TransportOutcome(
-      failure: native.TransportFailure(message: _message(error)),
+    return TransportOutcome(
+      failure: TransportFailure(message: _message(error)),
     );
   }
 };
@@ -895,7 +870,7 @@ String _message(Object error) {
 }
 
 /// The default transport's policy: `https`, or `http` to this device.
-void _refusePlaintext(native.WalletConfig config, bool allowInsecureHttp) {
+void _refusePlaintext(WalletConfig config, bool allowInsecureHttp) {
   if (allowInsecureHttp) return;
   for (final (url, insecure) in [
     (config.rpcUrl, (String url) => WalletError.rpcUrlInsecure(url: url)),
@@ -916,43 +891,9 @@ void _refusePlaintext(native.WalletConfig config, bool allowInsecureHttp) {
 }
 
 /// [text] with the value of every `api-key` parameter replaced by
-/// `redacted`, as the native wallet masks them in its errors.
+/// `redacted`: up to `&`, `#`, `)`, `"` or whitespace, as the native wallet
+/// masks them in its errors (`redact_api_keys`).
 String _redactApiKeys(String text) => text.replaceAllMapped(
   RegExp(r'(api-key=)[^&#)"\s]*'),
   (match) => '${match[1]}redacted',
 );
-
-class _NativeBackend implements WalletBackend {
-  const _NativeBackend();
-
-  @override
-  Future<Uint8List> derivationMessage(String solanaPubkey) =>
-      native.derivationMessage(solanaPubkey: solanaPubkey);
-
-  @override
-  Future<native.MobileWallet> open(
-    native.WalletConfig config,
-    String solanaPubkey,
-    Uint8List derivationSignature,
-    NativeTransport transport,
-  ) async => native.MobileWallet.open(
-    config: config,
-    solanaPubkey: solanaPubkey,
-    derivationSignature: derivationSignature,
-    transport: await native.Transport.newInstance(send: transport),
-  );
-
-  @override
-  Future<native.MobileWallet> openWithKeys(
-    native.WalletConfig config,
-    String solanaPubkey,
-    native.WalletKeys keys,
-    NativeTransport transport,
-  ) async => native.MobileWallet.openWithKeys(
-    config: config,
-    solanaPubkey: solanaPubkey,
-    keys: keys,
-    // A native transport per wallet: opening a wallet consumes it.
-    transport: await native.Transport.newInstance(send: transport),
-  );
-}

@@ -32,7 +32,7 @@ use spr_interface::{
 use spr_program::instruction::{CacheWriteAccounts, CreateCache, MergeTransact};
 use spr_transaction::{
     instructions::merge::{MergeTransaction, MERGE_DEFAULT_INPUT_COUNT},
-    select_merge, Data, Utxo, WalletUtxo,
+    select_merge, Data, TransactionError, Utxo, WalletUtxo,
 };
 use spr_user_registry_interface::user_record_pda;
 use std::{
@@ -77,13 +77,13 @@ impl CacheTarget {
     fn validate(&self) -> Result<(), WalletError> {
         self.create()?;
         if usize::from(self.slot) >= CACHE_CAPACITY {
-            return Err(invalid("cache slot out of range"));
+            return Err(WalletError::CacheTargetInvalid);
         }
         if self.expires_at <= now() {
-            return Err(invalid("cache expired"));
+            return Err(WalletError::CacheExpired);
         }
         if self.compute_unit_limit == 0 || self.compute_unit_limit > MAX_COMPUTE_UNITS {
-            return Err(invalid("invalid merge compute limit"));
+            return Err(WalletError::CacheTargetInvalid);
         }
         Ok(())
     }
@@ -133,6 +133,12 @@ impl CachedOutput {
     }
 }
 
+fn no_cached_inputs() -> WalletError {
+    WalletError::InvalidArguments {
+        message: "cached inputs are empty".into(),
+    }
+}
+
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -157,14 +163,17 @@ impl MobileWallet {
     ) -> Result<PreparedTransaction, WalletError> {
         target.validate()?;
         if input_ids.is_some() && (mint.is_some() || max_inputs.is_some()) {
-            return Err(invalid(
-                "inputIds cannot be combined with mint or maxInputs",
-            ));
+            return Err(WalletError::InvalidArguments {
+                message: "inputIds cannot be combined with mint or maxInputs".into(),
+            });
         }
         let ids = input_ids.as_deref().map(merge_input_ids).transpose()?;
         let fee = priority_fee_lamports.or(self.priority_fee).unwrap_or(0);
         if fee > target.max_priority_fee_lamports {
-            return Err(invalid("priority fee exceeds sponsored run limit"));
+            return Err(WalletError::PriorityFeeTooHigh {
+                fee,
+                max: target.max_priority_fee_lamports,
+            });
         }
         let remote = self.remote_prover(proving)?;
         let payer = parse_pubkey(&target.sponsor)?;
@@ -267,9 +276,7 @@ impl MobileWallet {
         let instructions = [target.create()?.instruction(), merge_ix];
         let budget = ComputeBudgetConfig::new(target.compute_unit_limit).with_priority_fee(fee);
         if !spr_client::transaction_size(&payer, &instructions, budget)?.fits() {
-            return Err(invalid(
-                "cached merge exceeds transaction limits; use fewer inputs",
-            ));
+            return Err(WalletError::TransactionTooLarge);
         }
         let message = compile_message(&payer, &instructions, Default::default(), budget)?;
         let mut pending = self.pending(
@@ -298,14 +305,16 @@ impl MobileWallet {
         priority_fee_lamports: Option<u64>,
     ) -> Result<PreparedTransaction, WalletError> {
         if cached_inputs.is_empty() {
-            return Err(invalid("cached inputs are empty"));
+            return Err(no_cached_inputs());
         }
         let fee = priority_fee_lamports.or(self.priority_fee).unwrap_or(0);
-        if cached_inputs
+        let max = cached_inputs
             .iter()
-            .any(|input| fee > input.target.max_priority_fee_lamports)
-        {
-            return Err(invalid("priority fee exceeds cached run limit"));
+            .map(|input| input.target.max_priority_fee_lamports)
+            .min()
+            .unwrap_or_default();
+        if fee > max {
+            return Err(WalletError::PriorityFeeTooHigh { fee, max });
         }
         self.prepare_spend_inner(
             outputs,
@@ -338,7 +347,7 @@ impl MobileWallet {
         let mut total = 0u64;
         for output in &ordered {
             if output.mint != mint_name(&asset.mint) {
-                return Err(invalid("cached input mint mismatch"));
+                return Err(WalletError::CachedOutputInvalid);
             }
             let note = self.cached_note(output)?;
             if reserved.contains(&note.nullifier) {
@@ -346,7 +355,7 @@ impl MobileWallet {
             }
             total = total
                 .checked_add(output.amount)
-                .ok_or_else(|| invalid("cached balance overflow"))?;
+                .ok_or(TransactionError::SelectedBalanceOverflow)?;
             notes.push(note);
         }
         if total < amount {
@@ -364,7 +373,7 @@ impl MobileWallet {
 
     pub(super) fn cached_note(&self, output: &CachedOutput) -> Result<WalletUtxo, WalletError> {
         if output.owner != self.owner.to_string() {
-            return Err(invalid("cached output belongs to another wallet"));
+            return Err(WalletError::CachedOutputInvalid);
         }
         let mint = output
             .mint
@@ -383,7 +392,7 @@ impl MobileWallet {
         let nullifier_pubkey = self.nullifier_key.pubkey()?;
         let utxo_hash = utxo.hash(&nullifier_pubkey, &[0; 32], &[0; 32], output.target.tree_id)?;
         if utxo_hash != output.commitment {
-            return Err(invalid("cached output commitment mismatch"));
+            return Err(WalletError::CachedOutputInvalid);
         }
         Ok(WalletUtxo {
             nullifier: self.nullifier_key.nullifier(&utxo_hash, &utxo.blinding)?,
@@ -405,19 +414,17 @@ impl MobileWallet {
     /// Check account owner, layout, run metadata and every expected commitment
     /// at RPC confirmed commitment. Does not wait for the indexer or a prover job.
     pub fn verify_cached_outputs(&self, outputs: Vec<CachedOutput>) -> Result<(), WalletError> {
-        let first = outputs
-            .first()
-            .ok_or_else(|| invalid("cached inputs are empty"))?;
+        let first = outputs.first().ok_or_else(no_cached_inputs)?;
         first.target.validate()?;
         let account = self
             .client
             .get_account(first.target.address()?)?
-            .ok_or_else(|| invalid("cache is not available yet or has been closed"))?;
+            .ok_or(WalletError::CacheUnavailable)?;
         if account.owner != PROGRAM_ID_PUBKEY || account.data.len() != CacheAccount::SIZE {
-            return Err(invalid("invalid cache account owner or size"));
+            return Err(WalletError::CacheMismatch);
         }
         let cache = bytemuck::try_pod_read_unaligned::<CacheAccount>(&account.data)
-            .map_err(|_| invalid("invalid cache account"))?;
+            .map_err(|_| WalletError::CacheMismatch)?;
         let sponsor = parse_pubkey(&first.target.sponsor)?;
         if !cache.has_discriminator()
             || cache.rent_sponsor != sponsor
@@ -425,21 +432,17 @@ impl MobileWallet {
             || u16::from_le_bytes(cache.tree_id) != first.target.tree_id
             || cache.expiry_unix_ts() != first.target.expires_at
         {
-            return Err(invalid("cache account does not match run terms"));
+            return Err(WalletError::CacheMismatch);
         }
         let mut slots = HashSet::new();
         for output in &outputs {
             output.target.validate()?;
             if !first.target.same_cache(&output.target) || !slots.insert(output.target.slot) {
-                return Err(invalid(
-                    "cached inputs must use distinct slots of one run cache",
-                ));
+                return Err(WalletError::CachedOutputInvalid);
             }
             self.cached_note(output)?;
             if cache.utxo_hashes[usize::from(output.target.slot)] != output.commitment {
-                return Err(invalid(
-                    "cache slot does not hold the expected merge output",
-                ));
+                return Err(WalletError::CacheMismatch);
             }
         }
         Ok(())
@@ -462,7 +465,7 @@ impl MobileWallet {
             let merge = spr_interface::instruction::MergeTransactIxData::deserialize(data)
                 .map_err(|_| invalid("invalid cached merge message"))?;
             if merge.expiry_unix_ts <= now() as u64 {
-                return Err(invalid("merge proof expired; prepare again"));
+                return Err(WalletError::MergeExpired);
             }
         }
         if !pending.cache_inputs.is_empty() {

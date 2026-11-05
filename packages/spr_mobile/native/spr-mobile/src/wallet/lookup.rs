@@ -87,7 +87,9 @@ pub(super) fn transaction(
             || Some(tx.slot) != slot
             || !event_ids.insert(event.event_index)
         {
-            return Err(ClientError::Rpc("inconsistent signature lookup response".into()).into());
+            return Err(
+                ClientError::Indexer("inconsistent signature lookup response".into()).into(),
+            );
         }
         transactions.push(tx);
     }
@@ -125,7 +127,7 @@ pub(super) fn transaction(
         .and_then(|tx| tx.transaction.meta.as_ref())
         .is_some_and(|meta| meta.err.is_some())
     {
-        return Err(ClientError::Rpc(
+        return Err(ClientError::Indexer(
             "indexer returned shielded events for a failed transaction".into(),
         )
         .into());
@@ -644,7 +646,7 @@ impl Reader<'_> {
                 continue;
             }
             let amount = u64::try_from(amount)
-                .map_err(|_| ClientError::Rpc("activity amount exceeds u64".into()))?;
+                .map_err(|_| ClientError::Indexer("activity amount exceeds u64".into()))?;
             let mut entry = activity::activity_entry(
                 HistoryEntry {
                     kind,

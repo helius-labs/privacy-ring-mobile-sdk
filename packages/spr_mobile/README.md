@@ -425,6 +425,9 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `indexerBehind` | `indexerSlot`, `rpcSlot` | the indexer did not reach the RPC's confirmed slot within about ten seconds |
 | `notesAlreadySpent` | | the chain already spent a note the transaction spends: the indexer was behind when it was prepared |
 | `notesReserved` | `amount` | only notes a prepared spend reserves would cover the amount |
+| `insufficientFundsForFee` | | the fee payer's SOL does not cover the network fee |
+| `insufficientFundsForRent` | | an account the transaction writes would be left below its rent-exempt minimum, such as a token account it creates |
+| `transactionTooLarge` | | the transaction exceeds Solana's size or account limits; prepare it with fewer inputs |
 | `recipientNotRegistered` | `recipient` | the recipient has no shielded address in the registry |
 | `registrationConflict` | `owner` | the registry holds other keys for this account |
 | `assetNotSupported` | `mint` | the shielded pool has not registered the mint, and this call cannot: a spend, a merge, or a deposit the pool lets only its authority register; or the mint is not an SPL Token or Token-2022 mint |
@@ -443,6 +446,7 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `transactionExpired` | `signature` | retained for compatibility; missing history after expiry now returns `transactionOutcomeUnknown` |
 | `transactionOutcomeUnknown` | `signature`, `message` | a send went unanswered and whether it landed could not be told; wait for it before sending it again |
 | `remoteProverMissing` | | the spend asked for remote proving without `WalletConfig.proverUrl` |
+| `proverPolicyMissing` | | remote proving, or `requireProverTee`, without a TEE policy or `proverTeeNetwork` |
 | `proofMalformed` | | the remote prover's response is not a proof of the pinned proving key |
 | `proofInvalid` | | the proof does not verify against the pinned verifying key |
 | `proofFailed` | | the device prover could not prove the request |
@@ -450,6 +454,7 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `proverLoadFailed` | | the proving key could not be loaded |
 | `unsupportedCircuit` | | the prepared circuit's shape is not one the wallet proves |
 | `provingKeyUnknown`, `provingKeyMismatch` | `name` | the lockfile does not pin the key the client expects |
+| `provingKeyCatalogInvalid` | | `provingKeyCatalog` is malformed or ambiguous, or set together with `provingKeyUrl` |
 | `provingKeyDownloadFailed`, `provingKeyCorrupt` | `name` | the key could not be downloaded, or does not hash to the pinned value |
 | `provingKeyStoreFailed` | `path` | the key directory could not be read or written |
 | `poseidonInputCountInvalid`, `poseidonInputLengthInvalid` | `count`; `index`, `length` | `poseidonHash` input is not 1 to 12 elements of 32 bytes |
@@ -457,6 +462,19 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `signerMismatch` | `wallet`, `signer` | the signer signs for another account |
 | `unexpectedSigners` | `signers` | the transaction needs other signers than this account alone |
 | `walletClosed` | | the wallet was closed |
+| `priorityFeeTooHigh` | `fee`, `max` | the priority fee exceeds the sponsored run's `maxPriorityFeeLamports` |
+| `cacheTargetInvalid` | | the cache target's slot or compute unit limit is out of range |
+| `cacheExpired` | | the sponsored run's cache is past its `expiresAt`; start another run |
+| `cacheUnavailable` | | the run's cache account does not exist yet or was closed |
+| `cacheMismatch` | | the cache account does not match the run's terms, or a slot does not hold the predicted merge output |
+| `cachedOutputInvalid` | | a cached output is another wallet's or mint's, does not match its commitment, or repeats a slot or cache |
+| `mergeExpired` | | the prepared cached merge's proof expired; prepare it again |
+| `mergeInputCountInvalid` | `count`, `max` | `inputIds` holds fewer than 2 or more than `max` ids |
+| `noteIdInvalid` | `id` | an `inputIds` entry is not 64 lowercase hex characters, or repeats one |
+| `mergeInputUnavailable` | `id` | the note is no longer among the wallet's notes; plan the merge again |
+| `mergeInputInvalid` | `id` | the note is not a nonzero plain note on the cache target's tree |
+| `snapshotInvalid` | | a prepared-transaction snapshot is too large, malformed or of another version, or this wallet did not export it |
+| `invalidArguments` | `message` | the call's arguments do not go together, such as `inputIds` with `mint`: a programming error |
 | `client` | `message` | any other Zolana client failure, such as a transport failure (`transport failed: ...`), with `api-key` values masked |
 
 Match on the variant classes, `WalletError_InsufficientPrivateBalance` and so

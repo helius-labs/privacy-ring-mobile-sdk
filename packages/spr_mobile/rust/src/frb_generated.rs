@@ -2934,11 +2934,10 @@ const _: fn() = || {
     {
         let LocalProofResult = None::<spr_mobile::LocalProofResult>.unwrap();
         let _: String = LocalProofResult.proof_json;
-        let _: bool = LocalProofResult.verified;
         let _: u32 = LocalProofResult.inputs;
         let _: u32 = LocalProofResult.outputs;
-        let _: u64 = LocalProofResult.proof_ms;
         let _: u64 = LocalProofResult.witness_ms;
+        let _: u64 = LocalProofResult.prove_ms;
         let _: u64 = LocalProofResult.verify_ms;
         let _: u64 = LocalProofResult.total_ms;
     }
@@ -3150,6 +3149,9 @@ const _: fn() = || {
         spr_mobile::WalletError::NotesReserved { amount } => {
             let _: u64 = amount;
         }
+        spr_mobile::WalletError::InsufficientFundsForFee => {}
+        spr_mobile::WalletError::InsufficientFundsForRent => {}
+        spr_mobile::WalletError::TransactionTooLarge => {}
         spr_mobile::WalletError::RecipientNotRegistered { recipient } => {
             let _: String = recipient;
         }
@@ -3253,6 +3255,33 @@ const _: fn() = || {
             let _: Vec<String> = signers;
         }
         spr_mobile::WalletError::WalletClosed => {}
+        spr_mobile::WalletError::PriorityFeeTooHigh { fee, max } => {
+            let _: u64 = fee;
+            let _: u64 = max;
+        }
+        spr_mobile::WalletError::CacheTargetInvalid => {}
+        spr_mobile::WalletError::CacheExpired => {}
+        spr_mobile::WalletError::CacheUnavailable => {}
+        spr_mobile::WalletError::CacheMismatch => {}
+        spr_mobile::WalletError::CachedOutputInvalid => {}
+        spr_mobile::WalletError::MergeExpired => {}
+        spr_mobile::WalletError::MergeInputCountInvalid { count, max } => {
+            let _: u64 = count;
+            let _: u64 = max;
+        }
+        spr_mobile::WalletError::NoteIdInvalid { id } => {
+            let _: String = id;
+        }
+        spr_mobile::WalletError::MergeInputUnavailable { id } => {
+            let _: String = id;
+        }
+        spr_mobile::WalletError::MergeInputInvalid { id } => {
+            let _: String = id;
+        }
+        spr_mobile::WalletError::SnapshotInvalid => {}
+        spr_mobile::WalletError::InvalidArguments { message } => {
+            let _: String = message;
+        }
         spr_mobile::WalletError::Client { message } => {
             let _: String = message;
         }
@@ -3806,20 +3835,18 @@ impl SseDecode for spr_mobile::LocalProofResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_proofJson = <String>::sse_decode(deserializer);
-        let mut var_verified = <bool>::sse_decode(deserializer);
         let mut var_inputs = <u32>::sse_decode(deserializer);
         let mut var_outputs = <u32>::sse_decode(deserializer);
-        let mut var_proofMs = <u64>::sse_decode(deserializer);
         let mut var_witnessMs = <u64>::sse_decode(deserializer);
+        let mut var_proveMs = <u64>::sse_decode(deserializer);
         let mut var_verifyMs = <u64>::sse_decode(deserializer);
         let mut var_totalMs = <u64>::sse_decode(deserializer);
         return spr_mobile::LocalProofResult {
             proof_json: var_proofJson,
-            verified: var_verified,
             inputs: var_inputs,
             outputs: var_outputs,
-            proof_ms: var_proofMs,
             witness_ms: var_witnessMs,
+            prove_ms: var_proveMs,
             verify_ms: var_verifyMs,
             total_ms: var_totalMs,
         };
@@ -4533,28 +4560,37 @@ impl SseDecode for spr_mobile::WalletError {
                 return spr_mobile::WalletError::NotesReserved { amount: var_amount };
             }
             10 => {
+                return spr_mobile::WalletError::InsufficientFundsForFee;
+            }
+            11 => {
+                return spr_mobile::WalletError::InsufficientFundsForRent;
+            }
+            12 => {
+                return spr_mobile::WalletError::TransactionTooLarge;
+            }
+            13 => {
                 let mut var_recipient = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::RecipientNotRegistered {
                     recipient: var_recipient,
                 };
             }
-            11 => {
+            14 => {
                 let mut var_owner = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::RegistrationConflict { owner: var_owner };
             }
-            12 => {
+            15 => {
                 let mut var_mint = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::AssetNotSupported { mint: var_mint };
             }
-            13 => {
+            16 => {
                 let mut var_mint = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::MintNotConfigured { mint: var_mint };
             }
-            14 => {
+            17 => {
                 let mut var_mint = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::InvalidMint { mint: var_mint };
             }
-            15 => {
+            18 => {
                 let mut var_mint = <String>::sse_decode(deserializer);
                 let mut var_tokenProgram = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::InvalidTokenProgram {
@@ -4562,11 +4598,11 @@ impl SseDecode for spr_mobile::WalletError {
                     token_program: var_tokenProgram,
                 };
             }
-            16 => {
+            19 => {
                 let mut var_value = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::InvalidPubkey { value: var_value };
             }
-            17 => {
+            20 => {
                 let mut var_maxInputs = <u64>::sse_decode(deserializer);
                 let mut var_limit = <u64>::sse_decode(deserializer);
                 return spr_mobile::WalletError::InvalidMaxSpendInputs {
@@ -4574,22 +4610,22 @@ impl SseDecode for spr_mobile::WalletError {
                     limit: var_limit,
                 };
             }
-            18 => {
+            21 => {
                 return spr_mobile::WalletError::InvalidDerivationSignature;
             }
-            19 => {
+            22 => {
                 return spr_mobile::WalletError::InvalidWalletKeys;
             }
-            20 => {
+            23 => {
                 let mut var_message = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::TransportFailed {
                     message: var_message,
                 };
             }
-            21 => {
+            24 => {
                 return spr_mobile::WalletError::SignatureInvalid;
             }
-            22 => {
+            25 => {
                 let mut var_expected = <u64>::sse_decode(deserializer);
                 let mut var_got = <u64>::sse_decode(deserializer);
                 return spr_mobile::WalletError::SignatureCountMismatch {
@@ -4597,19 +4633,19 @@ impl SseDecode for spr_mobile::WalletError {
                     got: var_got,
                 };
             }
-            23 => {
+            26 => {
                 let mut var_signature = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::TransactionNotConfirmed {
                     signature: var_signature,
                 };
             }
-            24 => {
+            27 => {
                 let mut var_signature = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::TransactionExpired {
                     signature: var_signature,
                 };
             }
-            25 => {
+            28 => {
                 let mut var_signature = <String>::sse_decode(deserializer);
                 let mut var_message = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::TransactionOutcomeUnknown {
@@ -4617,80 +4653,80 @@ impl SseDecode for spr_mobile::WalletError {
                     message: var_message,
                 };
             }
-            26 => {
+            29 => {
                 return spr_mobile::WalletError::RemoteProverMissing;
             }
-            27 => {
+            30 => {
                 return spr_mobile::WalletError::ProverPolicyMissing;
             }
-            28 => {
+            31 => {
                 return spr_mobile::WalletError::ProofMalformed;
             }
-            29 => {
+            32 => {
                 return spr_mobile::WalletError::ProofInvalid;
             }
-            30 => {
+            33 => {
                 return spr_mobile::WalletError::ProofFailed;
             }
-            31 => {
+            34 => {
                 return spr_mobile::WalletError::ProverBusy;
             }
-            32 => {
+            35 => {
                 return spr_mobile::WalletError::ProverClosed;
             }
-            33 => {
+            36 => {
                 return spr_mobile::WalletError::ProverUnavailable;
             }
-            34 => {
+            37 => {
                 return spr_mobile::WalletError::ProverLoadFailed;
             }
-            35 => {
-                return spr_mobile::WalletError::UnsupportedCircuit;
-            }
-            36 => {
-                let mut var_url = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::RpcUrlInsecure { url: var_url };
-            }
-            37 => {
-                let mut var_url = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::IndexerUrlInsecure { url: var_url };
-            }
             38 => {
-                let mut var_url = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::ProvingKeyUrlInsecure { url: var_url };
+                return spr_mobile::WalletError::UnsupportedCircuit;
             }
             39 => {
                 let mut var_url = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::ProverUrlInsecure { url: var_url };
+                return spr_mobile::WalletError::RpcUrlInsecure { url: var_url };
             }
             40 => {
-                let mut var_name = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::ProvingKeyUnknown { name: var_name };
+                let mut var_url = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::IndexerUrlInsecure { url: var_url };
             }
             41 => {
-                return spr_mobile::WalletError::ProvingKeyCatalogInvalid;
+                let mut var_url = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::ProvingKeyUrlInsecure { url: var_url };
             }
             42 => {
-                let mut var_name = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::ProvingKeyMismatch { name: var_name };
+                let mut var_url = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::ProverUrlInsecure { url: var_url };
             }
             43 => {
                 let mut var_name = <String>::sse_decode(deserializer);
-                return spr_mobile::WalletError::ProvingKeyDownloadFailed { name: var_name };
+                return spr_mobile::WalletError::ProvingKeyUnknown { name: var_name };
             }
             44 => {
+                return spr_mobile::WalletError::ProvingKeyCatalogInvalid;
+            }
+            45 => {
+                let mut var_name = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::ProvingKeyMismatch { name: var_name };
+            }
+            46 => {
+                let mut var_name = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::ProvingKeyDownloadFailed { name: var_name };
+            }
+            47 => {
                 let mut var_name = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::ProvingKeyCorrupt { name: var_name };
             }
-            45 => {
+            48 => {
                 let mut var_path = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::ProvingKeyStoreFailed { path: var_path };
             }
-            46 => {
+            49 => {
                 let mut var_count = <u64>::sse_decode(deserializer);
                 return spr_mobile::WalletError::PoseidonInputCountInvalid { count: var_count };
             }
-            47 => {
+            50 => {
                 let mut var_index = <u64>::sse_decode(deserializer);
                 let mut var_length = <u64>::sse_decode(deserializer);
                 return spr_mobile::WalletError::PoseidonInputLengthInvalid {
@@ -4698,10 +4734,10 @@ impl SseDecode for spr_mobile::WalletError {
                     length: var_length,
                 };
             }
-            48 => {
+            51 => {
                 return spr_mobile::WalletError::SignerMissing;
             }
-            49 => {
+            52 => {
                 let mut var_wallet = <String>::sse_decode(deserializer);
                 let mut var_signer = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::SignerMismatch {
@@ -4709,16 +4745,71 @@ impl SseDecode for spr_mobile::WalletError {
                     signer: var_signer,
                 };
             }
-            50 => {
+            53 => {
                 let mut var_signers = <Vec<String>>::sse_decode(deserializer);
                 return spr_mobile::WalletError::UnexpectedSigners {
                     signers: var_signers,
                 };
             }
-            51 => {
+            54 => {
                 return spr_mobile::WalletError::WalletClosed;
             }
-            52 => {
+            55 => {
+                let mut var_fee = <u64>::sse_decode(deserializer);
+                let mut var_max = <u64>::sse_decode(deserializer);
+                return spr_mobile::WalletError::PriorityFeeTooHigh {
+                    fee: var_fee,
+                    max: var_max,
+                };
+            }
+            56 => {
+                return spr_mobile::WalletError::CacheTargetInvalid;
+            }
+            57 => {
+                return spr_mobile::WalletError::CacheExpired;
+            }
+            58 => {
+                return spr_mobile::WalletError::CacheUnavailable;
+            }
+            59 => {
+                return spr_mobile::WalletError::CacheMismatch;
+            }
+            60 => {
+                return spr_mobile::WalletError::CachedOutputInvalid;
+            }
+            61 => {
+                return spr_mobile::WalletError::MergeExpired;
+            }
+            62 => {
+                let mut var_count = <u64>::sse_decode(deserializer);
+                let mut var_max = <u64>::sse_decode(deserializer);
+                return spr_mobile::WalletError::MergeInputCountInvalid {
+                    count: var_count,
+                    max: var_max,
+                };
+            }
+            63 => {
+                let mut var_id = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::NoteIdInvalid { id: var_id };
+            }
+            64 => {
+                let mut var_id = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::MergeInputUnavailable { id: var_id };
+            }
+            65 => {
+                let mut var_id = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::MergeInputInvalid { id: var_id };
+            }
+            66 => {
+                return spr_mobile::WalletError::SnapshotInvalid;
+            }
+            67 => {
+                let mut var_message = <String>::sse_decode(deserializer);
+                return spr_mobile::WalletError::InvalidArguments {
+                    message: var_message,
+                };
+            }
+            68 => {
                 let mut var_message = <String>::sse_decode(deserializer);
                 return spr_mobile::WalletError::Client {
                     message: var_message,
@@ -5088,11 +5179,10 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<spr_mobile::LocalProofResult> 
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.proof_json.into_into_dart().into_dart(),
-            self.0.verified.into_into_dart().into_dart(),
             self.0.inputs.into_into_dart().into_dart(),
             self.0.outputs.into_into_dart().into_dart(),
-            self.0.proof_ms.into_into_dart().into_dart(),
             self.0.witness_ms.into_into_dart().into_dart(),
+            self.0.prove_ms.into_into_dart().into_dart(),
             self.0.verify_ms.into_into_dart().into_dart(),
             self.0.total_ms.into_into_dart().into_dart(),
         ]
@@ -5716,123 +5806,157 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<spr_mobile::WalletError> {
             spr_mobile::WalletError::NotesReserved { amount } => {
                 [9.into_dart(), amount.into_into_dart().into_dart()].into_dart()
             }
+            spr_mobile::WalletError::InsufficientFundsForFee => [10.into_dart()].into_dart(),
+            spr_mobile::WalletError::InsufficientFundsForRent => [11.into_dart()].into_dart(),
+            spr_mobile::WalletError::TransactionTooLarge => [12.into_dart()].into_dart(),
             spr_mobile::WalletError::RecipientNotRegistered { recipient } => {
-                [10.into_dart(), recipient.into_into_dart().into_dart()].into_dart()
+                [13.into_dart(), recipient.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::RegistrationConflict { owner } => {
-                [11.into_dart(), owner.into_into_dart().into_dart()].into_dart()
+                [14.into_dart(), owner.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::AssetNotSupported { mint } => {
-                [12.into_dart(), mint.into_into_dart().into_dart()].into_dart()
+                [15.into_dart(), mint.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::MintNotConfigured { mint } => {
-                [13.into_dart(), mint.into_into_dart().into_dart()].into_dart()
+                [16.into_dart(), mint.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::InvalidMint { mint } => {
-                [14.into_dart(), mint.into_into_dart().into_dart()].into_dart()
+                [17.into_dart(), mint.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::InvalidTokenProgram {
                 mint,
                 token_program,
             } => [
-                15.into_dart(),
+                18.into_dart(),
                 mint.into_into_dart().into_dart(),
                 token_program.into_into_dart().into_dart(),
             ]
             .into_dart(),
             spr_mobile::WalletError::InvalidPubkey { value } => {
-                [16.into_dart(), value.into_into_dart().into_dart()].into_dart()
+                [19.into_dart(), value.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::InvalidMaxSpendInputs { max_inputs, limit } => [
-                17.into_dart(),
+                20.into_dart(),
                 max_inputs.into_into_dart().into_dart(),
                 limit.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            spr_mobile::WalletError::InvalidDerivationSignature => [18.into_dart()].into_dart(),
-            spr_mobile::WalletError::InvalidWalletKeys => [19.into_dart()].into_dart(),
+            spr_mobile::WalletError::InvalidDerivationSignature => [21.into_dart()].into_dart(),
+            spr_mobile::WalletError::InvalidWalletKeys => [22.into_dart()].into_dart(),
             spr_mobile::WalletError::TransportFailed { message } => {
-                [20.into_dart(), message.into_into_dart().into_dart()].into_dart()
+                [23.into_dart(), message.into_into_dart().into_dart()].into_dart()
             }
-            spr_mobile::WalletError::SignatureInvalid => [21.into_dart()].into_dart(),
+            spr_mobile::WalletError::SignatureInvalid => [24.into_dart()].into_dart(),
             spr_mobile::WalletError::SignatureCountMismatch { expected, got } => [
-                22.into_dart(),
+                25.into_dart(),
                 expected.into_into_dart().into_dart(),
                 got.into_into_dart().into_dart(),
             ]
             .into_dart(),
             spr_mobile::WalletError::TransactionNotConfirmed { signature } => {
-                [23.into_dart(), signature.into_into_dart().into_dart()].into_dart()
+                [26.into_dart(), signature.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::TransactionExpired { signature } => {
-                [24.into_dart(), signature.into_into_dart().into_dart()].into_dart()
+                [27.into_dart(), signature.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::TransactionOutcomeUnknown { signature, message } => [
-                25.into_dart(),
+                28.into_dart(),
                 signature.into_into_dart().into_dart(),
                 message.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            spr_mobile::WalletError::RemoteProverMissing => [26.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProverPolicyMissing => [27.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProofMalformed => [28.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProofInvalid => [29.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProofFailed => [30.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProverBusy => [31.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProverClosed => [32.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProverUnavailable => [33.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProverLoadFailed => [34.into_dart()].into_dart(),
-            spr_mobile::WalletError::UnsupportedCircuit => [35.into_dart()].into_dart(),
+            spr_mobile::WalletError::RemoteProverMissing => [29.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProverPolicyMissing => [30.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProofMalformed => [31.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProofInvalid => [32.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProofFailed => [33.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProverBusy => [34.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProverClosed => [35.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProverUnavailable => [36.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProverLoadFailed => [37.into_dart()].into_dart(),
+            spr_mobile::WalletError::UnsupportedCircuit => [38.into_dart()].into_dart(),
             spr_mobile::WalletError::RpcUrlInsecure { url } => {
-                [36.into_dart(), url.into_into_dart().into_dart()].into_dart()
-            }
-            spr_mobile::WalletError::IndexerUrlInsecure { url } => {
-                [37.into_dart(), url.into_into_dart().into_dart()].into_dart()
-            }
-            spr_mobile::WalletError::ProvingKeyUrlInsecure { url } => {
-                [38.into_dart(), url.into_into_dart().into_dart()].into_dart()
-            }
-            spr_mobile::WalletError::ProverUrlInsecure { url } => {
                 [39.into_dart(), url.into_into_dart().into_dart()].into_dart()
             }
+            spr_mobile::WalletError::IndexerUrlInsecure { url } => {
+                [40.into_dart(), url.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::ProvingKeyUrlInsecure { url } => {
+                [41.into_dart(), url.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::ProverUrlInsecure { url } => {
+                [42.into_dart(), url.into_into_dart().into_dart()].into_dart()
+            }
             spr_mobile::WalletError::ProvingKeyUnknown { name } => {
-                [40.into_dart(), name.into_into_dart().into_dart()].into_dart()
-            }
-            spr_mobile::WalletError::ProvingKeyCatalogInvalid => [41.into_dart()].into_dart(),
-            spr_mobile::WalletError::ProvingKeyMismatch { name } => {
-                [42.into_dart(), name.into_into_dart().into_dart()].into_dart()
-            }
-            spr_mobile::WalletError::ProvingKeyDownloadFailed { name } => {
                 [43.into_dart(), name.into_into_dart().into_dart()].into_dart()
             }
+            spr_mobile::WalletError::ProvingKeyCatalogInvalid => [44.into_dart()].into_dart(),
+            spr_mobile::WalletError::ProvingKeyMismatch { name } => {
+                [45.into_dart(), name.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::ProvingKeyDownloadFailed { name } => {
+                [46.into_dart(), name.into_into_dart().into_dart()].into_dart()
+            }
             spr_mobile::WalletError::ProvingKeyCorrupt { name } => {
-                [44.into_dart(), name.into_into_dart().into_dart()].into_dart()
+                [47.into_dart(), name.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::ProvingKeyStoreFailed { path } => {
-                [45.into_dart(), path.into_into_dart().into_dart()].into_dart()
+                [48.into_dart(), path.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::PoseidonInputCountInvalid { count } => {
-                [46.into_dart(), count.into_into_dart().into_dart()].into_dart()
+                [49.into_dart(), count.into_into_dart().into_dart()].into_dart()
             }
             spr_mobile::WalletError::PoseidonInputLengthInvalid { index, length } => [
-                47.into_dart(),
+                50.into_dart(),
                 index.into_into_dart().into_dart(),
                 length.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            spr_mobile::WalletError::SignerMissing => [48.into_dart()].into_dart(),
+            spr_mobile::WalletError::SignerMissing => [51.into_dart()].into_dart(),
             spr_mobile::WalletError::SignerMismatch { wallet, signer } => [
-                49.into_dart(),
+                52.into_dart(),
                 wallet.into_into_dart().into_dart(),
                 signer.into_into_dart().into_dart(),
             ]
             .into_dart(),
             spr_mobile::WalletError::UnexpectedSigners { signers } => {
-                [50.into_dart(), signers.into_into_dart().into_dart()].into_dart()
+                [53.into_dart(), signers.into_into_dart().into_dart()].into_dart()
             }
-            spr_mobile::WalletError::WalletClosed => [51.into_dart()].into_dart(),
+            spr_mobile::WalletError::WalletClosed => [54.into_dart()].into_dart(),
+            spr_mobile::WalletError::PriorityFeeTooHigh { fee, max } => [
+                55.into_dart(),
+                fee.into_into_dart().into_dart(),
+                max.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            spr_mobile::WalletError::CacheTargetInvalid => [56.into_dart()].into_dart(),
+            spr_mobile::WalletError::CacheExpired => [57.into_dart()].into_dart(),
+            spr_mobile::WalletError::CacheUnavailable => [58.into_dart()].into_dart(),
+            spr_mobile::WalletError::CacheMismatch => [59.into_dart()].into_dart(),
+            spr_mobile::WalletError::CachedOutputInvalid => [60.into_dart()].into_dart(),
+            spr_mobile::WalletError::MergeExpired => [61.into_dart()].into_dart(),
+            spr_mobile::WalletError::MergeInputCountInvalid { count, max } => [
+                62.into_dart(),
+                count.into_into_dart().into_dart(),
+                max.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            spr_mobile::WalletError::NoteIdInvalid { id } => {
+                [63.into_dart(), id.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::MergeInputUnavailable { id } => {
+                [64.into_dart(), id.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::MergeInputInvalid { id } => {
+                [65.into_dart(), id.into_into_dart().into_dart()].into_dart()
+            }
+            spr_mobile::WalletError::SnapshotInvalid => [66.into_dart()].into_dart(),
+            spr_mobile::WalletError::InvalidArguments { message } => {
+                [67.into_dart(), message.into_into_dart().into_dart()].into_dart()
+            }
             spr_mobile::WalletError::Client { message } => {
-                [52.into_dart(), message.into_into_dart().into_dart()].into_dart()
+                [68.into_dart(), message.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -6274,11 +6398,10 @@ impl SseEncode for spr_mobile::LocalProofResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.proof_json, serializer);
-        <bool>::sse_encode(self.verified, serializer);
         <u32>::sse_encode(self.inputs, serializer);
         <u32>::sse_encode(self.outputs, serializer);
-        <u64>::sse_encode(self.proof_ms, serializer);
         <u64>::sse_encode(self.witness_ms, serializer);
+        <u64>::sse_encode(self.prove_ms, serializer);
         <u64>::sse_encode(self.verify_ms, serializer);
         <u64>::sse_encode(self.total_ms, serializer);
     }
@@ -6852,169 +6975,225 @@ impl SseEncode for spr_mobile::WalletError {
                 <i32>::sse_encode(9, serializer);
                 <u64>::sse_encode(amount, serializer);
             }
-            spr_mobile::WalletError::RecipientNotRegistered { recipient } => {
+            spr_mobile::WalletError::InsufficientFundsForFee => {
                 <i32>::sse_encode(10, serializer);
+            }
+            spr_mobile::WalletError::InsufficientFundsForRent => {
+                <i32>::sse_encode(11, serializer);
+            }
+            spr_mobile::WalletError::TransactionTooLarge => {
+                <i32>::sse_encode(12, serializer);
+            }
+            spr_mobile::WalletError::RecipientNotRegistered { recipient } => {
+                <i32>::sse_encode(13, serializer);
                 <String>::sse_encode(recipient, serializer);
             }
             spr_mobile::WalletError::RegistrationConflict { owner } => {
-                <i32>::sse_encode(11, serializer);
+                <i32>::sse_encode(14, serializer);
                 <String>::sse_encode(owner, serializer);
             }
             spr_mobile::WalletError::AssetNotSupported { mint } => {
-                <i32>::sse_encode(12, serializer);
+                <i32>::sse_encode(15, serializer);
                 <String>::sse_encode(mint, serializer);
             }
             spr_mobile::WalletError::MintNotConfigured { mint } => {
-                <i32>::sse_encode(13, serializer);
+                <i32>::sse_encode(16, serializer);
                 <String>::sse_encode(mint, serializer);
             }
             spr_mobile::WalletError::InvalidMint { mint } => {
-                <i32>::sse_encode(14, serializer);
+                <i32>::sse_encode(17, serializer);
                 <String>::sse_encode(mint, serializer);
             }
             spr_mobile::WalletError::InvalidTokenProgram {
                 mint,
                 token_program,
             } => {
-                <i32>::sse_encode(15, serializer);
+                <i32>::sse_encode(18, serializer);
                 <String>::sse_encode(mint, serializer);
                 <String>::sse_encode(token_program, serializer);
             }
             spr_mobile::WalletError::InvalidPubkey { value } => {
-                <i32>::sse_encode(16, serializer);
+                <i32>::sse_encode(19, serializer);
                 <String>::sse_encode(value, serializer);
             }
             spr_mobile::WalletError::InvalidMaxSpendInputs { max_inputs, limit } => {
-                <i32>::sse_encode(17, serializer);
+                <i32>::sse_encode(20, serializer);
                 <u64>::sse_encode(max_inputs, serializer);
                 <u64>::sse_encode(limit, serializer);
             }
             spr_mobile::WalletError::InvalidDerivationSignature => {
-                <i32>::sse_encode(18, serializer);
+                <i32>::sse_encode(21, serializer);
             }
             spr_mobile::WalletError::InvalidWalletKeys => {
-                <i32>::sse_encode(19, serializer);
+                <i32>::sse_encode(22, serializer);
             }
             spr_mobile::WalletError::TransportFailed { message } => {
-                <i32>::sse_encode(20, serializer);
+                <i32>::sse_encode(23, serializer);
                 <String>::sse_encode(message, serializer);
             }
             spr_mobile::WalletError::SignatureInvalid => {
-                <i32>::sse_encode(21, serializer);
+                <i32>::sse_encode(24, serializer);
             }
             spr_mobile::WalletError::SignatureCountMismatch { expected, got } => {
-                <i32>::sse_encode(22, serializer);
+                <i32>::sse_encode(25, serializer);
                 <u64>::sse_encode(expected, serializer);
                 <u64>::sse_encode(got, serializer);
             }
             spr_mobile::WalletError::TransactionNotConfirmed { signature } => {
-                <i32>::sse_encode(23, serializer);
+                <i32>::sse_encode(26, serializer);
                 <String>::sse_encode(signature, serializer);
             }
             spr_mobile::WalletError::TransactionExpired { signature } => {
-                <i32>::sse_encode(24, serializer);
+                <i32>::sse_encode(27, serializer);
                 <String>::sse_encode(signature, serializer);
             }
             spr_mobile::WalletError::TransactionOutcomeUnknown { signature, message } => {
-                <i32>::sse_encode(25, serializer);
+                <i32>::sse_encode(28, serializer);
                 <String>::sse_encode(signature, serializer);
                 <String>::sse_encode(message, serializer);
             }
             spr_mobile::WalletError::RemoteProverMissing => {
-                <i32>::sse_encode(26, serializer);
-            }
-            spr_mobile::WalletError::ProverPolicyMissing => {
-                <i32>::sse_encode(27, serializer);
-            }
-            spr_mobile::WalletError::ProofMalformed => {
-                <i32>::sse_encode(28, serializer);
-            }
-            spr_mobile::WalletError::ProofInvalid => {
                 <i32>::sse_encode(29, serializer);
             }
-            spr_mobile::WalletError::ProofFailed => {
+            spr_mobile::WalletError::ProverPolicyMissing => {
                 <i32>::sse_encode(30, serializer);
             }
-            spr_mobile::WalletError::ProverBusy => {
+            spr_mobile::WalletError::ProofMalformed => {
                 <i32>::sse_encode(31, serializer);
             }
-            spr_mobile::WalletError::ProverClosed => {
+            spr_mobile::WalletError::ProofInvalid => {
                 <i32>::sse_encode(32, serializer);
             }
-            spr_mobile::WalletError::ProverUnavailable => {
+            spr_mobile::WalletError::ProofFailed => {
                 <i32>::sse_encode(33, serializer);
             }
-            spr_mobile::WalletError::ProverLoadFailed => {
+            spr_mobile::WalletError::ProverBusy => {
                 <i32>::sse_encode(34, serializer);
             }
-            spr_mobile::WalletError::UnsupportedCircuit => {
+            spr_mobile::WalletError::ProverClosed => {
                 <i32>::sse_encode(35, serializer);
             }
-            spr_mobile::WalletError::RpcUrlInsecure { url } => {
+            spr_mobile::WalletError::ProverUnavailable => {
                 <i32>::sse_encode(36, serializer);
-                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::IndexerUrlInsecure { url } => {
+            spr_mobile::WalletError::ProverLoadFailed => {
                 <i32>::sse_encode(37, serializer);
-                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyUrlInsecure { url } => {
+            spr_mobile::WalletError::UnsupportedCircuit => {
                 <i32>::sse_encode(38, serializer);
-                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProverUrlInsecure { url } => {
+            spr_mobile::WalletError::RpcUrlInsecure { url } => {
                 <i32>::sse_encode(39, serializer);
                 <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyUnknown { name } => {
+            spr_mobile::WalletError::IndexerUrlInsecure { url } => {
                 <i32>::sse_encode(40, serializer);
-                <String>::sse_encode(name, serializer);
+                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyCatalogInvalid => {
+            spr_mobile::WalletError::ProvingKeyUrlInsecure { url } => {
                 <i32>::sse_encode(41, serializer);
+                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyMismatch { name } => {
+            spr_mobile::WalletError::ProverUrlInsecure { url } => {
                 <i32>::sse_encode(42, serializer);
-                <String>::sse_encode(name, serializer);
+                <String>::sse_encode(url, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyDownloadFailed { name } => {
+            spr_mobile::WalletError::ProvingKeyUnknown { name } => {
                 <i32>::sse_encode(43, serializer);
                 <String>::sse_encode(name, serializer);
             }
-            spr_mobile::WalletError::ProvingKeyCorrupt { name } => {
+            spr_mobile::WalletError::ProvingKeyCatalogInvalid => {
                 <i32>::sse_encode(44, serializer);
+            }
+            spr_mobile::WalletError::ProvingKeyMismatch { name } => {
+                <i32>::sse_encode(45, serializer);
+                <String>::sse_encode(name, serializer);
+            }
+            spr_mobile::WalletError::ProvingKeyDownloadFailed { name } => {
+                <i32>::sse_encode(46, serializer);
+                <String>::sse_encode(name, serializer);
+            }
+            spr_mobile::WalletError::ProvingKeyCorrupt { name } => {
+                <i32>::sse_encode(47, serializer);
                 <String>::sse_encode(name, serializer);
             }
             spr_mobile::WalletError::ProvingKeyStoreFailed { path } => {
-                <i32>::sse_encode(45, serializer);
+                <i32>::sse_encode(48, serializer);
                 <String>::sse_encode(path, serializer);
             }
             spr_mobile::WalletError::PoseidonInputCountInvalid { count } => {
-                <i32>::sse_encode(46, serializer);
+                <i32>::sse_encode(49, serializer);
                 <u64>::sse_encode(count, serializer);
             }
             spr_mobile::WalletError::PoseidonInputLengthInvalid { index, length } => {
-                <i32>::sse_encode(47, serializer);
+                <i32>::sse_encode(50, serializer);
                 <u64>::sse_encode(index, serializer);
                 <u64>::sse_encode(length, serializer);
             }
             spr_mobile::WalletError::SignerMissing => {
-                <i32>::sse_encode(48, serializer);
+                <i32>::sse_encode(51, serializer);
             }
             spr_mobile::WalletError::SignerMismatch { wallet, signer } => {
-                <i32>::sse_encode(49, serializer);
+                <i32>::sse_encode(52, serializer);
                 <String>::sse_encode(wallet, serializer);
                 <String>::sse_encode(signer, serializer);
             }
             spr_mobile::WalletError::UnexpectedSigners { signers } => {
-                <i32>::sse_encode(50, serializer);
+                <i32>::sse_encode(53, serializer);
                 <Vec<String>>::sse_encode(signers, serializer);
             }
             spr_mobile::WalletError::WalletClosed => {
-                <i32>::sse_encode(51, serializer);
+                <i32>::sse_encode(54, serializer);
+            }
+            spr_mobile::WalletError::PriorityFeeTooHigh { fee, max } => {
+                <i32>::sse_encode(55, serializer);
+                <u64>::sse_encode(fee, serializer);
+                <u64>::sse_encode(max, serializer);
+            }
+            spr_mobile::WalletError::CacheTargetInvalid => {
+                <i32>::sse_encode(56, serializer);
+            }
+            spr_mobile::WalletError::CacheExpired => {
+                <i32>::sse_encode(57, serializer);
+            }
+            spr_mobile::WalletError::CacheUnavailable => {
+                <i32>::sse_encode(58, serializer);
+            }
+            spr_mobile::WalletError::CacheMismatch => {
+                <i32>::sse_encode(59, serializer);
+            }
+            spr_mobile::WalletError::CachedOutputInvalid => {
+                <i32>::sse_encode(60, serializer);
+            }
+            spr_mobile::WalletError::MergeExpired => {
+                <i32>::sse_encode(61, serializer);
+            }
+            spr_mobile::WalletError::MergeInputCountInvalid { count, max } => {
+                <i32>::sse_encode(62, serializer);
+                <u64>::sse_encode(count, serializer);
+                <u64>::sse_encode(max, serializer);
+            }
+            spr_mobile::WalletError::NoteIdInvalid { id } => {
+                <i32>::sse_encode(63, serializer);
+                <String>::sse_encode(id, serializer);
+            }
+            spr_mobile::WalletError::MergeInputUnavailable { id } => {
+                <i32>::sse_encode(64, serializer);
+                <String>::sse_encode(id, serializer);
+            }
+            spr_mobile::WalletError::MergeInputInvalid { id } => {
+                <i32>::sse_encode(65, serializer);
+                <String>::sse_encode(id, serializer);
+            }
+            spr_mobile::WalletError::SnapshotInvalid => {
+                <i32>::sse_encode(66, serializer);
+            }
+            spr_mobile::WalletError::InvalidArguments { message } => {
+                <i32>::sse_encode(67, serializer);
+                <String>::sse_encode(message, serializer);
             }
             spr_mobile::WalletError::Client { message } => {
-                <i32>::sse_encode(52, serializer);
+                <i32>::sse_encode(68, serializer);
                 <String>::sse_encode(message, serializer);
             }
             _ => {

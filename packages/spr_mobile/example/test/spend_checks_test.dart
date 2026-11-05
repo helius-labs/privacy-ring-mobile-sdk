@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cryptography/cryptography.dart';
-import 'package:spr_mobile/src/rust/third_party/spr_mobile.dart'
-    as native;
+import 'package:spr_mobile/src/backend.dart';
+import 'package:spr_mobile/src/rust/third_party/spr_mobile.dart' as native;
 import 'package:zolana_mobile_demo/demo_signer.dart';
 import 'package:zolana_mobile_demo/encoding.dart';
 import 'package:spr_mobile/spr_mobile.dart';

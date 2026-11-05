@@ -27,7 +27,6 @@ void main() {
           'assets/proving/prove-request-2x2.json',
         );
         final result = await prover.prove(requestJson: request);
-        expect(result.verified, isTrue);
         expect((result.inputs, result.outputs), (2, 2));
         expect(
           jsonDecode(result.proofJson),
