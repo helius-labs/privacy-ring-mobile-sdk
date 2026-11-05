@@ -8,7 +8,7 @@ import 'rust/third_party/spr_mobile.dart' show PreparedTransaction, WalletError;
 /// Signs as one Solana account: a platform keystore, a wallet adapter or a
 /// remote custodian. The Solana secret key never enters this package.
 ///
-/// [signMessage] is asked for two things: once, the Zolana derivation message
+/// [signMessage] is asked for two things: once, the SPR derivation message
 /// that opens the wallet, with no [transaction], and then each prepared
 /// transaction's message, with the [transaction] to show the user before
 /// signing.
@@ -129,7 +129,7 @@ class SprWallet {
   Future<void> _last = Future.value();
   Future<void>? _closing;
 
-  /// The address other Zolana wallets pay, once [register] has published it.
+  /// The address other SPR wallets pay, once [register] has published it.
   final String shieldedAddress;
 
   /// Base58 public key of the Solana account this wallet belongs to.
@@ -137,7 +137,7 @@ class SprWallet {
 
   bool get isClosed => _closing != null;
 
-  /// Open the wallet [signer] controls. Asks the signer to sign the Zolana
+  /// Open the wallet [signer] controls. Asks the signer to sign the SPR
   /// derivation message; the resulting keys stay in memory for this session.
   ///
   /// Every request of the wallet goes through [transport], the application's
@@ -793,7 +793,7 @@ class SprWallet {
     return _keys.clear();
   }
 
-  /// Prove [requestJson], a Zolana `/prove` request, with the pinned key
+  /// Prove [requestJson], an SPR `/prove` request, with the pinned key
   /// [keyName] (such as `transfer_confidential_1_2.key`), as a spend is
   /// proved: the key downloads when it is not on the device, loads when it
   /// is not the loaded one, and the proof is verified. The result says where

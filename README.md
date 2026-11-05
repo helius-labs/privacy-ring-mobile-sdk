@@ -1,21 +1,16 @@
-# Zolana Mobile SDK
+# SPR Mobile SDK
 
-A Flutter SDK for private Zolana payments on Android and iOS. `SprWallet`
-registers, shields, sends privately and unshields, building every
-transaction with the Zolana Rust client and proving it on the device with
-zopro, a Groth16 prover in Rust for gnark's keys (on the GPU where there is
-one), or through the application's backend with the proof verified on the
-device. The Solana key stays with the application's signer.
-
-Targets the finalized ceremony keys and signed-policy protocol in
-[Zolana #521](https://github.com/helius-labs/zolana/pull/521).
+A Flutter SDK for private payments with Solana Privacy Rings (SPR) on Android
+and iOS. `SprWallet` registers, shields, sends privately and unshields,
+building every transaction with the SPR Rust client and proving it on the
+device with zopro, a Groth16 prover in Rust for gnark's keys (on the GPU where
+there is one), or through the application's backend with the proof verified
+on the device. The Solana key stays with the application's signer.
 
 Pins Zolana commit `c5297afa13e8bfb6edadf6408304ef3fc2f8c676` and shielded-pool program
-`ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply indexer and
-remote prover URLs with a reviewed TEE policy.
-Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
-or a reviewed static `proverTeePolicy`. Missing policy fails before HTTP.
-Deployment endpoints are configured by the application.
+`ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply the RPC,
+indexer and remote prover URLs, and a
+[TEE policy](packages/spr_mobile/README.md#tee-policy) for remote proving.
 See [SDK configuration](packages/spr_mobile/README.md). Earlier programs'
 notes and pending transactions require their matching SDK and deployment.
 
@@ -24,9 +19,11 @@ notes and pending transactions require their matching SDK and deployment.
 - `packages/spr_mobile/native/spr-mobile`: the native wallet, the
   on-device prover and the proving-key store.
 - `packages/spr_mobile`: the Flutter plugin, and an example devnet wallet.
-- `fixtures`: a 2→2 `/prove` request built with the Zolana prover's test
-  helpers, and the Helius prover's response to it.
-- `scripts`: asset staging.
+- `fixtures`: `/prove` requests of transfers of 1 to 24 notes and of merges
+  of 24 and 52 notes, written by `tools/prove-fixtures`, and a prover's
+  response to the 2→2 request.
+- `scripts`: demo asset staging, the key-catalog sync, the consumer and
+  simulator checks, the native-library checks and the proof timing reports.
 
 The generated native library keeps Mopro's internal
 `mopro_flutter_bindings` stem. Applications import the public Dart package as
@@ -64,7 +61,8 @@ flutter test integration_test/devnet_wallet_test.dart -d DEVICE \
 
 `ZOLANA_API_KEY` is a Helius key: the example reaches Solana devnet RPC through
 Helius with it, and Zolana's devnet-e indexer and prover without it. It is
-compiled into that build only; do not commit it.
+compiled into that build only; do not commit it. Alternatively, set
+`ZOLANA_RPC_URL` to your Solana devnet RPC.
 
 The build uses the precompiled native libraries (see below). When no release
 matches the sources, it builds them from source with Rust. Android source builds need the NDK version Flutter selects (28.2.13676358
@@ -92,16 +90,18 @@ flutter pub get
 flutter analyze
 ```
 
-After staging assets, run the real proof test with:
+After staging assets, run the real proof test with the staged key:
 
 ```sh
-cargo test -p spr-mobile proves_the_staged_request -- --ignored
+ZOLANA_TEST_KEY_DIR="$PWD/.cache/proving" \
+  cargo test -p spr-mobile proves_a_client_request_with_the_pinned_key -- --ignored
 ```
 
 ## Rust dependencies
 
 The Flutter-facing crate pins `mopro-ffi` to `sergeytimoshin/mopro` revision
-`c1071f96fa5a28dca8e567dd3944331047450a2b`. The prover is `zopro-prover`: the
+`c1071f96fa5a28dca8e567dd3944331047450a2b`. The prover is `zopro-spr` from
+`helius-labs/zk-tools` revision `fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8`: the
 request to the circuit's inputs, the arithmetic, and the proof verified and
 encoded as gnark's verifier reads it; gnark itself runs only offline, where
 the circuits are compiled and the keys made. Protocol crates `spr-hasher`,
@@ -144,8 +144,8 @@ primitives.
 ## Current boundary
 
 `SprWallet` builds and proves transactions; the application signs them, and
-either the wallet or the application sends them. `LocalProver.prove`
-remains for callers that assemble their own `/prove` requests. The wallet holds
+either the wallet or the application sends them. `LocalProver.prove` proves
+`/prove` requests that callers assemble themselves. The wallet holds
 SOL and the SPL tokens the shielded pool has registered, keeps its state in
 memory, and merges notes on request.
 

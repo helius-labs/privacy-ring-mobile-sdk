@@ -1,13 +1,13 @@
-# Zolana Flutter SDK
+# SPR Flutter SDK
 
-A private Zolana wallet for Flutter that proves on the device with zopro, a
-Groth16 prover in Rust for gnark's proving keys, on the GPU where there is
-one. Android and iOS are supported. The package contains its Rust sources; it
-does not require a sibling Zolana checkout.
+A private Solana Privacy Rings (SPR) wallet for Flutter that proves on the
+device with zopro, a Groth16 prover in Rust for gnark's proving keys, on the
+GPU where there is one. Android and iOS are supported. The package contains
+its Rust sources; it does not require a sibling Zolana checkout.
 
 This SDK pins Zolana source `c5297afa13e8bfb6edadf6408304ef3fc2f8c676`
-([#521](https://github.com/helius-labs/zolana/pull/521), SDK 0.8.0-alpha) and
-shielded-pool program `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`.
+(SDK 0.9.0-alpha) and shielded-pool program
+`ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`.
 Applications select the deployment explicitly:
 
 ```dart
@@ -20,19 +20,7 @@ final config = WalletConfig(
 );
 ```
 
-The Rust SDK downloads the network's signed policy, verifies it with its pinned
-signing keys, and checks network, version and expiry. It refreshes the policy
-with attestation and re-attests once after an enclave key rotation. URLs never
-select a policy. `proverTeePolicyUrl` downloads the selected network's signed
-policy from another HTTPS URL, such as a staging deployment's
-(`https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/v2/devnet.json` for devnet
-staging); the network's pinned signers still verify it, and it needs
-`proverTeeNetwork`. Custom deployments may supply a complete reviewed static policy
-as `proverTeePolicy` instead; setting both fields is rejected. Applications must
-keep static policies current themselves. Never learn trust pins from the prover
-being verified. Missing policy raises `WalletError.proverPolicyMissing` before
-HTTP for remote URLs; `requireProverTee: true` enforces this for loopback too.
-Local proving needs no policy.
+Remote proving needs a [TEE policy](#tee-policy); local proving needs none.
 
 This upgrade keeps program IDs, notes and snapshot version 2 unchanged. The
 finalized ceremony keys replace older transfer and merge keys; the key store
@@ -41,7 +29,7 @@ submission. Earlier program IDs still require their matching SDK and deployment
 for recovery. The public-seed Flutter example remains devnet-only; supply your
 own signer and mainnet endpoints when selecting `ProverTeeNetwork.mainnet`.
 
-**Performance.** The native prover at four threads on an Apple M5 Pro proves a warm spend (key loaded) in 0.17 s for one note to two outputs, 0.27 s for two, 0.55 s for four, 0.92 s for eight, 1.7 s for sixteen and 2.7 s for twenty-four; a restart adds the key's load from its mapped image (tens of milliseconds there), and the first run its download (9 MB to 180 MB). On phones, in release builds, one note proves in 0.18 s on a Samsung Galaxy S25, 0.21 s on an iPhone 17 Pro, 0.30 s to 0.35 s on an iPhone 15, an iPhone 12 and a Galaxy A56, and 1.2 s on a Galaxy A16; eight notes in 1.2 s to 2.0 s, 7.0 s on the A16; twenty-four in 3.6 s to 5.9 s, 25 s on the A16. A key loads from its image in under 0.3 s, up to 0.74 s on the A16. CI benches release builds on these six phones for every pull request and keeps the history of `main` on the [`proof-timing`](https://github.com/helius-labs/zolana-mobile-sdk/tree/proof-timing) branch; "Proof timing" below describes the harness.
+**Performance.** The native prover at four threads on an Apple M5 Pro proves a warm spend (key loaded) in 0.17 s for one note to two outputs, 0.27 s for two, 0.55 s for four, 0.92 s for eight, 1.7 s for sixteen and 2.7 s for twenty-four; a restart adds the key's load from its mapped image (tens of milliseconds there), and the first run its download (7 MB to 145 MB). On phones, in release builds, one note proves in 0.18 s on a Samsung Galaxy S25, 0.21 s on an iPhone 17 Pro, 0.30 s to 0.35 s on an iPhone 15, an iPhone 12 and a Galaxy A56, and 1.2 s on a Galaxy A16; eight notes in 1.2 s to 2.0 s, 7.0 s on the A16; twenty-four in 3.6 s to 5.9 s, 25 s on the A16. A key loads from its image in under 0.3 s, up to 0.74 s on the A16. CI benches release builds on these six phones for every pull request and keeps the history of `main` on the [`proof-timing`](https://github.com/helius-labs/zolana-mobile-sdk/tree/proof-timing) branch; "Proof timing" below describes the harness.
 
 ## Requirements
 
@@ -101,13 +89,13 @@ iOS builds read a new options file after `flutter clean`.
 ## Private wallet
 
 `SprWallet` runs the whole flow: registration, deposit, and spends to
-private and public recipients. It builds every transaction with the Zolana
+private and public recipients. It builds every transaction with the SPR
 Rust client and proves it on the device, or through the application's backend
 (see [Backend proving](#backend-proving)). The Solana secret key never enters
 the package; your `SolanaSigner` (a platform keystore, a wallet adapter, a
 custodian) signs two things:
 
-1. once, the Zolana derivation message. The signature is the seed of the
+1. once, the SPR derivation message. The signature is the seed of the
    wallet's nullifier and viewing keys, which stay in memory for this session.
    A wallet opened from saved keys (see below) skips this.
 2. each prepared transaction's message, with the `PreparedTransaction` to show
@@ -189,8 +177,8 @@ await wallet.spend(
   This example policy checks spend outputs; it does not validate recipient
   ciphertext decryptability, audit protocol tree fees, or independently
   verify Groth16 proofs. The shielded-pool program verifies proofs during
-  execution. Registration, deposit and merge approvals retain their existing
-  behavior. Openings are confidential: keep them out of logs and analytics.
+  execution. It does not check registration, deposit or merge approvals.
+  Openings are confidential: keep them out of logs and analytics.
 
 - **One transaction**: use `await wallet.transaction(signature)` on a detail
   screen. It requests `getShieldedTransactionsBySignature` and the confirmed
@@ -295,8 +283,7 @@ await wallet.spend(
   `zopro-keys.lock`, which pins each file's size and sha256 beside the gnark
   key's sha256 that proofs report. The wallet picks the circuit shape, so the
   first spend of a new shape downloads its key, 7 MB for one note and up to
-  315 MB for the widest spends and merges, unless it is already on the
-  device:
+  306 MB for a merge of 52, unless it is already on the device:
 
   ```dart
   // On Wi-Fi after onboarding: spends of up to four notes, about 60 MB.
@@ -443,13 +430,15 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `transactionExpired` | `signature` | retained for compatibility; missing history after expiry now returns `transactionOutcomeUnknown` |
 | `transactionOutcomeUnknown` | `signature`, `message` | a send went unanswered and whether it landed could not be told; wait for it before sending it again |
 | `remoteProverMissing` | | the spend asked for remote proving without `WalletConfig.proverUrl` |
+| `proverPolicyMissing` | | remote proving, or `requireProverTee`, without a TEE policy or `proverTeeNetwork` |
 | `proofMalformed` | | the remote prover's response is not a proof of the pinned proving key |
 | `proofInvalid` | | the proof does not verify against the pinned verifying key |
 | `proofFailed` | | the device prover could not prove the request |
-| `proverBusy`, `proverClosed`, `proverUnavailable` | | the prepared prover slot is taken, released or unusable |
+| `proverBusy`, `proverClosed`, `proverUnavailable` | | another proof is running or a `LocalProver` holds the loaded key; the `LocalProver` was closed; or the process's prover state is unusable |
 | `proverLoadFailed` | | the proving key could not be loaded |
 | `unsupportedCircuit` | | the prepared circuit's shape is not one the wallet proves |
 | `provingKeyUnknown`, `provingKeyMismatch` | `name` | the lockfile does not pin the key the client expects |
+| `provingKeyCatalogInvalid` | | `provingKeyCatalog` is malformed or ambiguous, or set together with `provingKeyUrl` |
 | `provingKeyDownloadFailed`, `provingKeyCorrupt` | `name` | the key could not be downloaded, or does not hash to the pinned value |
 | `provingKeyStoreFailed` | `path` | the key directory could not be read or written |
 | `poseidonInputCountInvalid`, `poseidonInputLengthInvalid` | `count`; `index`, `length` | `poseidonHash` input is not 1 to 12 elements of 32 bytes |
@@ -656,12 +645,13 @@ it returns `transactionOutcomeUnknown`, even after `lastValidBlockHeight`.
 That height stops waiting early; it does not prove the payment never landed.
 The application keeps the pending signature and decides when to check again.
 
-### Sponsored cache merges (v0.6)
+### Sponsored cache merges
 
 For a backend that accepts `[CreateCache, MergeTransact]`, pass a `cacheTarget`
 to `prepareMerge`, then use each merge's `cachedOutput` in the final
-`prepareSpend(cachedInputs: ...)`. Without a target, `prepareMerge` retains its
-ordinary tree flow; changing only `feePayer` does not create a cache transaction.
+`prepareSpend(cachedInputs: ...)`. Without a target, `prepareMerge` builds an
+ordinary merge (see [Merges](#merges)); changing only `feePayer` does not create
+a cache transaction.
 
 ```dart
 // Plan from actual unreserved notes, grouped by mint and tree. Choose enough
@@ -717,8 +707,8 @@ With `inputIds`, cached merges infer the asset and require exactly 2–51 distin
 available, unreserved, nonzero plain notes of that asset on the target tree.
 Do not combine IDs with `mint` or `maxInputs`, or use them without `cacheTarget`.
 The SDK never substitutes, truncates or sorts explicit inputs: the first input
-determines the merge output's blinding. Without IDs, automatic selection remains
-available. A tree's note count alone does not establish sufficient payment value;
+determines the merge output's blinding. Without IDs, the SDK selects the
+inputs. A tree's note count alone does not establish sufficient payment value;
 sum the planned amounts and check the final spend's input limit before paying
 for a run. The current mobile/backend contract uses one input/output tree.
 
@@ -776,7 +766,7 @@ final wallet = await SprWallet.open(
     provingKeyDir: provingKeyDir,
     proverUrl: 'https://backend.example/zolana', // your backend
     proverTeePolicy: reviewedPolicyJson,
-    proving: Proving.remote,                     // the default; optional
+    proving: Proving.remote,                     // optional; local when unset
   ),
 );
 await wallet.spend(
@@ -797,24 +787,17 @@ await wallet.spend(
   completes or fails. Set `WalletConfig.proverSyncOnly: true` when the backend
   supports synchronous responses only; queued or asynchronous fallbacks then
   fail without sending a status-polling request.
-  The Helius gateway (`https://*.helius-rpc.com/v1/spr`) routes proofs
-  by their body, so for it the paths are `/prove` and `/prove/status`.
 - **Attestation**: from every prover but a loopback one, the Helius gateway
   included, the wallet first fetches
   `GET <proverUrl>/attestation?nonce=<hex>`, checks that the prover
-  matches the application's supplied policy, and encrypts every
+  matches the application's [TEE policy](#tee-policy), and encrypts every
   request body to it, with `Spr-Tee` and `Spr-Tee-Enc` headers.
   POST ciphertext is in the octet-stream body; encrypted GET uses the
   `Spr-Tee-Ciphertext` header. Each request is bound to its method and
   its route below `proverUrl`. A remote prover that does not attest fails
   every remote spend: no setting sends it plaintext. Set
   `requireProverTee: true` to enforce this for a localhost proxy too.
-  Select `proverTeeNetwork` for an SDK-pinned signed policy, with
-  `proverTeePolicyUrl` to download it from another URL, or supply
-  `proverTeePolicy` for a custom deployment. Signed policies refresh automatically
-  and fail closed on invalid signatures, expiry or rollback. Static policies
-  must be updated through trusted application configuration, never by the prover
-  being  verified. Verification checks vendor evidence, freshness, nonce/key binding
+  Verification checks vendor evidence, freshness, nonce/key binding
   and the policy's deployment measurements and key/GPU constraints.
 - **The application's backend** serves these routes, the attestation
   included, as a proxy of an attested Zolana prover: it forwards the body
@@ -852,13 +835,38 @@ await wallet.spend(
 Current limits: a spend takes at most `WalletConfig.maxSpendInputs` notes
 (40 when unset, the most a key supports) from at most two trees and fails
 with `WalletError.mergeRequired` or `WalletError.tooManyInputTrees` beyond
-that (see [Merges](#merges)); one prepared prover is loaded per process, so
+that (see [Merges](#merges)); one proving key is loaded per process, so
 close a `LocalProver` before the wallet proves. A spend of zero fails with
 `WalletError.amountZero`. Proof time and memory grow with the notes a spend
 takes, so set the cap to what the phones you support prove in the time you
 accept, and merge before spends need more: `TokenBalance.notes` says how
 many notes each balance is in, and `TokenBalance.limits` what one spend can
 take now.
+
+### TEE policy
+
+The wallet trusts a remote prover only through the policy the application
+selects; URLs never select one.
+
+- `proverTeeNetwork: ProverTeeNetwork.devnet` (or `mainnet`): the Rust SDK
+  downloads the network's signed policy, verifies it with its pinned signing
+  keys, and checks network, version and expiry. It refreshes the policy with
+  attestation, re-attests once after an enclave key rotation, and fails
+  closed on an invalid signature, expiry or rollback.
+- `proverTeePolicyUrl` downloads the selected network's signed policy from
+  another HTTPS URL, such as a staging deployment's
+  (`https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/v2/devnet.json` for
+  devnet staging). The network's pinned signers still verify it, and it needs
+  `proverTeeNetwork`.
+- `proverTeePolicy`: a complete reviewed static policy for a custom
+  deployment. Setting it together with `proverTeeNetwork` is rejected. The
+  application keeps a static policy current through its own trusted
+  configuration.
+
+Never learn trust pins from the prover being verified. Missing policy raises
+`WalletError.proverPolicyMissing` before HTTP for remote URLs;
+`requireProverTee: true` enforces this for loopback too. Local proving needs
+no policy.
 
 ### Balances
 
@@ -1063,7 +1071,7 @@ The prover supports `transfer-confidential`, `transfer-ring`,
 shape. Other circuit types fail closed. The bundled demo stages only 2→2;
 provide the matching trusted keys for other shapes.
 
-Only one prepared native prover is loaded at a time per process, and each
+Only one proving key is loaded at a time per process, and each
 `LocalProver` runs one proof at a time; another fails with
 `WalletError.proverBusy`, and so do the wallet's own proofs while a
 `LocalProver` is loaded. Close it before loading another key.
@@ -1075,13 +1083,13 @@ already-loaded prover. Close and reload explicitly to change circuit versions.
 ## Wallet lock and cleanup
 
 ```dart
-wallet.invalidateSession();
+endAppSession(); // the application's own authorization state
 await prover.close();
 ```
 
-The wallet must invalidate its own authorization/session immediately on lock.
-`close()` waits for the proof in progress, which then fails with
-`WalletError.proverClosed`, and releases the prepared keys; later proofs fail
+The application must invalidate its own authorization/session immediately on
+lock. `close()` waits for the proof in progress, which then fails with
+`WalletError.proverClosed`, and releases the loaded key; later proofs fail
 the same way. It is idempotent. Already-delivered results cannot be revoked:
 always check the current wallet session/approval immediately before accepting
 a proof or signing/submitting.
@@ -1106,20 +1114,9 @@ do not add raw native errors or witness JSON to application logs.
 ## Example and validation
 
 The example app is a private wallet on Zolana devnet with two built-in demo
-accounts (their keys are public in `example/lib/demo_keys.dart`; devnet SOL only)
-and a local proof benchmark. Stage the benchmark's key and run it:
-
-```sh
-./scripts/stage-demo-assets.sh
-cd packages/spr_mobile/example
-flutter pub get
-flutter run --release -d YOUR_DEVICE_ID --dart-define=ZOLANA_API_KEY=...
-```
-
-`ZOLANA_API_KEY` is a Helius key: the example reaches Solana devnet RPC through
-Helius with it, and Zolana's devnet-e indexer and prover without it. It is
-compiled into that build only; never commit it.
-Alternatively, set `ZOLANA_RPC_URL` to your Solana devnet RPC.
+accounts and a local proof benchmark. The repository README's
+[Demo](https://github.com/helius-labs/zolana-mobile-sdk#demo) section stages
+its key, runs it and explains `ZOLANA_API_KEY`.
 
 ### From Xcode
 
@@ -1178,8 +1175,8 @@ new process that finds them and gives the other two (first run after a
 restart, then repeated). An iOS test run gets one install, so the
 `bench-ipa` app makes the restart rows after the fresh ones in one process,
 closing and reopening the wallet between (`ZOLANA_TIMING_RUN=both`). The
-keys download from the key host (9 MB for one note, 59 MB for 8, 180 MB for
-24, 173 MB for the merge). `ZOLANA_TIMING_SHAPES` narrows the shapes, and
+keys download from the key host (7 MB for one note, 44 MB for 8, 145 MB for
+24, 140 MB for the merge). `ZOLANA_TIMING_SHAPES` narrows the shapes, and
 `ZOLANA_TIMING_ROUNDS` (4, and 2 for shapes over 8 notes) is the proofs per
 shape and run; the report takes medians, a directory per phone.
 
@@ -1193,7 +1190,7 @@ joins the history on the
 [`proof-timing`](https://github.com/helius-labs/zolana-mobile-sdk/tree/proof-timing)
 branch, a table of the last commits per phone.
 
-`wallet.proveRequest(keyName, requestJson)` is what the harness calls: it
+`wallet.proveRequest(keyName: ..., requestJson: ...)` is what the harness calls: it
 proves any Zolana `/prove` request with a pinned key, and returns the
 proof and the stage timings. `tools/prove-fixtures` wrote the fixture
 requests, on trees of its own: they prove with the pinned keys and land
@@ -1203,8 +1200,7 @@ nowhere.
 
 `WalletConfig.provingKeyCatalog` accepts the JSON contents of the
 `/proving-keys` catalog (`keys[].artifacts[]`). Supply it from app configuration
-or fetch it separately. The SDK does not fetch catalogs automatically. Selecting `proverTeeNetwork`
-enables signed-policy downloads.
+or fetch it separately. The SDK does not fetch catalogs automatically.
 This option and `provingKeyUrl` are mutually exclusive.
 
 The gnark source digest and zopro checksum and size must match the bundled pins.

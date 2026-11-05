@@ -1,7 +1,7 @@
 [package]
 name = "spr-mobile"
 version = "0.1.0"
-description = "Flutter-facing bindings for Zolana transaction construction and local proving."
+description = "The native wallet and on-device prover of the SPR Flutter SDK."
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/helius-labs/zolana-mobile-sdk"

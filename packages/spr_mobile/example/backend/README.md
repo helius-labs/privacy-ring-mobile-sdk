@@ -130,14 +130,14 @@ sending. Repeating the same request resends identical signed bytes and returns
 the same signature; different bytes for that slot return 409. `accepted: false`
 is **unknown**, not permission to create a replacement.
 
-This is an integration contract, not an implementation of the client's production
+This is an integration contract, not an implementation of a production
 prepayment/quote contract. It has no quote signature, prepayment ledger,
 aggregate run budget, per-user authorization, production `feePerNullifier`
-policy or guarantee of tree-funded rent. The client's backend must apply those
-checks before issuing terms and before signing. The SDK enforces the supplied
-cache target and priority cap; it cannot establish promises absent from those
-terms. Existing production run terms should be adapted to this interface without
-silently dropping their additional restrictions.
+policy or guarantee of tree-funded rent. Your backend must apply those checks
+before issuing terms and before signing. The SDK enforces the supplied cache
+target and priority cap; it cannot establish promises absent from those terms.
+Adapt your production run terms to this interface without dropping their
+additional restrictions.
 
 Cleanup is separate from the final user payment. Before expiry, closing a cache
 requires its writer; adding that instruction would add a sponsor signature.
@@ -183,15 +183,11 @@ mobile polling would require a different prover delivery protocol. Chain/cache
 confirmation remains separate from proof-job polling.
 
 Attestation verification runs in the pinned SDK on the phone, not in this
-proxy: vendor evidence, nonce/key binding, deployment measurements, freshness,
-and the policy's key/GPU constraints are checked before witnesses are encrypted.
-The example selects `ProverTeeNetwork.devnet`. The upstream Rust client downloads
-and verifies the signed network policy with its pinned signing keys, checks its
-network, version and expiry, and refreshes it with attestation. Policy downloads
-use the app transport without forwarding `x-sf-auth` to the policy CDN.
-For a custom deployment, supply reviewed static policy JSON through
-`WalletConfig.proverTeePolicy` (`ZOLANA_TEE_POLICY` in the example); the app must
-keep that override current. Never learn trust pins from the prover being verified.
+proxy, before witnesses are encrypted. The example selects
+`ProverTeeNetwork.devnet`, or the static policy of `ZOLANA_TEE_POLICY` for a
+custom deployment; the SDK's [TEE policy](../../README.md#tee-policy) section
+describes both. Policy downloads use the app transport without forwarding
+`x-sf-auth` to the policy CDN.
 
 ## Recovery and limitations
 
@@ -245,9 +241,8 @@ The ignored native integration test
 TEE proofs, two slots, restart restoration and a local payment with both private
 and public outputs for SOL and optionally SPL tokens. See its environment setup
 in `native/spr-mobile/tests/wallet_flow.rs`; it submits devnet transactions
-and requires funded demo keys. It has been run successfully against the pinned
-devnet deployment. This is not a claim of compatibility with the client's staging
-proxy or production quote contract.
+and requires funded demo keys. It does not test compatibility with your
+backend's staging proxy or production quote contract.
 
 The opt-in Flutter test runs the same flow through the public Dart API and the
 example's encrypted storage and signing checks. It requests queued TEE proofs,
