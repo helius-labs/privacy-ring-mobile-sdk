@@ -45,7 +45,7 @@ diagnose() {
   local file="$diagnostics/$1"
   echo "::group::Diagnostics: $1"
   echo "--- processes"
-  ps -axo pid,ppid,etime,command | grep -E 'flutter|dart|xcodebuild|xcrun|simctl|cargo|go build|Runner' | grep -v grep || true
+  ps -axo pid,ppid,etime,command | grep -E 'flutter|dart|xcodebuild|xcrun|simctl|cargo|Runner' | grep -v grep || true
   echo "--- simulators"
   quick xcrun simctl list devices booted || true
   echo "--- CoreSimulator.log"
