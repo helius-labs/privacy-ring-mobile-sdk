@@ -100,13 +100,11 @@ cargo test -p spr-mobile proves_the_staged_request -- --ignored
 
 ## Rust dependencies
 
-The Flutter-facing crate pins `mopro-ffi` to `sergeytimoshin/mopro` revision
-`c1071f96fa5a28dca8e567dd3944331047450a2b`. The prover is `zopro-prover`: the
-request to the circuit's inputs, the arithmetic, and the proof verified and
-encoded as gnark's verifier reads it; gnark itself runs only offline, where
-the circuits are compiled and the keys made. Protocol crates `spr-hasher`,
-`spr-keypair`, and `spr-transaction` are pinned to one Zolana revision,
-which must be on Zolana `main`.
+The prover is `zopro-prover`: the request to the circuit's inputs, the
+arithmetic, and the proof verified and encoded as gnark's verifier reads it;
+gnark itself runs only offline, where the circuits are compiled and the keys
+made. Protocol crates `spr-hasher`, `spr-keypair`, and `spr-transaction` are
+pinned to one Zolana revision, which must be on Zolana `main`.
 
 ## Precompiled binaries
 
