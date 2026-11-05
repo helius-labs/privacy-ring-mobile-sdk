@@ -4,6 +4,7 @@ use super::account::WalletConfig;
 use super::{
     history,
     spend::{max_spend_inputs, spend_failure, within_cap},
+    util::spend_candidate,
     MobileWallet,
 };
 use crate::{
@@ -122,16 +123,11 @@ pub(super) fn proof_widths() -> Vec<usize> {
 /// The most a spend of up to `cap` notes can take from `notes`, those in
 /// `reserved` left out, as selection would take them: the largest first,
 /// stopping before a note past the cap or on a third tree. Every amount up
-/// to it selects; one more fails. The candidates are the Zolana SDK's, whose
-/// filter is not public: positive notes the default-ring circuit spends.
+/// to it selects; one more fails.
 pub(super) fn spend_limit(notes: &[WalletUtxo], reserved: &HashSet<[u8; 32]>, cap: usize) -> u64 {
     let mut candidates: Vec<&WalletUtxo> = notes
         .iter()
-        .filter(|note| {
-            note.utxo.amount > 0
-                && note.is_default_ring_spendable()
-                && !reserved.contains(&note.nullifier)
-        })
+        .filter(|note| spend_candidate(note, reserved))
         .collect();
     candidates.sort_by_key(|note| Reverse(note.utxo.amount));
     let mut trees: Vec<u16> = Vec::with_capacity(MAX_INPUT_TREES);

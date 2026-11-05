@@ -4,7 +4,10 @@ use crate::error::{client_message, settles_the_send, WalletError};
 use solana_commitment_config::CommitmentConfig;
 use solana_signature::Signature;
 use solana_transaction::versioned::VersionedTransaction;
-use spr_client::{ClientError, IndexerPollConfig, Rpc, SolanaRpc, SprClient};
+use spr_client::{
+    ClientError, GetShieldedTransactionsBySignatureResponse, IndexerPollConfig, Rpc, SolanaRpc,
+    SprClient,
+};
 use std::{str::FromStr, thread::sleep, time::Duration};
 
 impl MobileWallet {
@@ -207,12 +210,7 @@ pub(super) fn reconcile(
         // its history. An empty response is not evidence of failure.
         if client
             .get_shielded_transactions_by_signature(signature, None)
-            .is_ok_and(|response| {
-                response.transactions.iter().any(|event| {
-                    event.transaction.tx_signature == signature
-                        && event.transaction.slot <= response.context.slot
-                })
-            })
+            .is_ok_and(|response| indexed(&response, signature))
         {
             return Ok(());
         }
@@ -242,14 +240,7 @@ fn wait_for_indexer(
     for delay in std::iter::once(Duration::ZERO).chain(poll.backoff()) {
         sleep(delay);
         match client.get_shielded_transactions_by_signature(signature, None) {
-            Ok(response)
-                if response.transactions.iter().any(|event| {
-                    event.transaction.tx_signature == signature
-                        && event.transaction.slot <= response.context.slot
-                }) =>
-            {
-                return Ok(())
-            }
+            Ok(response) if indexed(&response, signature) => return Ok(()),
             Ok(_) => last_error = None,
             Err(failure) if client.indexer().should_retry(&failure) => {
                 last_error = Some(client_message(&failure));
@@ -265,4 +256,13 @@ fn wait_for_indexer(
         None => ClientError::IndexerTimeout,
     }
     .into())
+}
+
+/// Whether `response` holds an event of `signature` at a slot the indexer
+/// has persisted.
+fn indexed(response: &GetShieldedTransactionsBySignatureResponse, signature: Signature) -> bool {
+    response.transactions.iter().any(|event| {
+        event.transaction.tx_signature == signature
+            && event.transaction.slot <= response.context.slot
+    })
 }

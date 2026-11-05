@@ -191,11 +191,9 @@ impl LocalProver {
             state.loaded = None;
             return Err(WalletError::ProverClosed);
         }
-        let proof = proof.map_err(|error| match error {
-            zopro_spr::Error::Unsupported | zopro_spr::Error::Shape => {
-                WalletError::UnsupportedCircuit
-            }
-            _ => WalletError::ProofFailed,
+        let proof = proof.map_err(|error| {
+            log::warn!("zopro: {error}");
+            prover::proof_failure(error)
         })?;
         Ok(LocalProofResult {
             proof_json: proof.proof_json.to_string(),

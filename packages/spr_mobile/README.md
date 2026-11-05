@@ -1207,6 +1207,8 @@ or fetch it separately. The SDK does not fetch catalogs automatically. Selecting
 enables signed-policy downloads.
 This option and `provingKeyUrl` are mutually exclusive.
 
+Each artifact's `format` is `gnark` or `zopro`; another format fails with
+`provingKeyCatalogInvalid`, as in the Rust client's `ProverKeys`.
 The gnark source digest and zopro checksum and size must match the bundled pins.
 Downloads use the complete zopro URL, including its prefix and query. HTTPS and
 loopback HTTP are accepted. Missing conversions fail without falling back to

@@ -146,6 +146,16 @@ fn write_image(key: &std::path::Path, image: &std::path::Path) -> Result<(), Str
     written
 }
 
+/// What a failed zopro proof reports: a request the loaded key does not
+/// prove, a circuit it has no key for or another shape, is an unsupported
+/// circuit; any other failure a failed proof.
+pub(crate) fn proof_failure(error: zopro_spr::Error) -> WalletError {
+    match error {
+        zopro_spr::Error::Unsupported | zopro_spr::Error::Shape => WalletError::UnsupportedCircuit,
+        zopro_spr::Error::Request | zopro_spr::Error::Prove(_) => WalletError::ProofFailed,
+    }
+}
+
 /// Why a proof on the device failed, carried through the client as
 /// [`ClientError::ProverFailed`] and read back as the [`WalletError`] it is.
 #[derive(Debug)]
@@ -215,13 +225,9 @@ impl NativeProver {
         }
         let load_ms = elapsed_ms(loading);
         let loaded = state.loaded.as_mut().ok_or(WalletError::ProverClosed)?;
-        let proof = loaded.prover.prove(body).map_err(|error| match error {
-            zopro_spr::Error::Unsupported => WalletError::UnsupportedCircuit,
-            zopro_spr::Error::Prove(message) => {
-                log::warn!("zopro: {name}: {message}");
-                WalletError::ProofFailed
-            }
-            _ => WalletError::ProofFailed,
+        let proof = loaded.prover.prove(body).map_err(|error| {
+            log::warn!("zopro: {name}: {error}");
+            proof_failure(error)
         })?;
         Ok(ProvedRequest {
             proof_json: proof.proof_json.to_string(),
@@ -330,10 +336,7 @@ mod tests {
         let request: serde_json::Value = serde_json::from_str(REQUEST).unwrap();
         let public_input = request["publicInputHash"].as_str().unwrap();
         let public_input = format!("{:0>64}", public_input.trim_start_matches("0x"));
-        let public_input: Vec<u8> = (0..64)
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&public_input[i..i + 2], 16).unwrap())
-            .collect();
+        let public_input: Vec<u8> = hex::decode(public_input).unwrap();
         let circuit = CircuitId::ConfidentialSigner(2, 2, N_PUBLIC_SLOTS as u8);
         verify_proof_statement(
             proof,

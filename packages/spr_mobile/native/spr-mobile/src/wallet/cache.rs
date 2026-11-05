@@ -4,7 +4,7 @@ use super::{
     merge::merge_expiry,
     notes::{merge_input_ids, select_merge_inputs, MAX_CACHED_MERGE_INPUTS},
     prepared::PreparedTransaction,
-    spend::{max_spend_inputs, within_cap},
+    spend::{max_spend_inputs, within_cap, MAX_COMPUTE_UNITS},
     types::{Operation, Output},
     util::{invalid, nullifiers, parse_pubkey},
     MobileWallet,
@@ -31,7 +31,8 @@ use spr_interface::{
 };
 use spr_program::instruction::{CacheWriteAccounts, CreateCache, MergeTransact};
 use spr_transaction::{
-    instructions::merge::MergeTransaction, select_merge, Data, Utxo, WalletUtxo,
+    instructions::merge::{MergeTransaction, MERGE_DEFAULT_INPUT_COUNT},
+    select_merge, Data, Utxo, WalletUtxo,
 };
 use spr_user_registry_interface::user_record_pda;
 use std::{
@@ -81,7 +82,7 @@ impl CacheTarget {
         if self.expires_at <= now() {
             return Err(invalid("cache expired"));
         }
-        if self.compute_unit_limit == 0 || self.compute_unit_limit > 1_400_000 {
+        if self.compute_unit_limit == 0 || self.compute_unit_limit > MAX_COMPUTE_UNITS {
             return Err(invalid("invalid merge compute limit"));
         }
         Ok(())
@@ -165,7 +166,7 @@ impl MobileWallet {
         if fee > target.max_priority_fee_lamports {
             return Err(invalid("priority fee exceeds sponsored run limit"));
         }
-        let proving = self.proving(proving)?;
+        let remote = self.remote_prover(proving)?;
         let payer = parse_pubkey(&target.sponsor)?;
         let record = fetch_user_record_optional_checked(&self.client, self.owner)?
             .ok_or(WalletError::MergingDisabled)?;
@@ -184,7 +185,9 @@ impl MobileWallet {
                     .utxos()
                     .filter(|note| note.tree_id() == target.tree_id),
                 self.asset(mint)?.mint,
-                max_inputs.unwrap_or(24).min(MAX_CACHED_MERGE_INPUTS as u32) as usize,
+                max_inputs
+                    .map_or(MERGE_DEFAULT_INPUT_COUNT, |max| max as usize)
+                    .min(MAX_CACHED_MERGE_INPUTS),
                 &reserved,
             )?,
         };
@@ -244,13 +247,9 @@ impl MobileWallet {
             }),
         }
         .build()?;
-        let proof = match proving {
-            Proving::Local => self.native_prover.prove_merge(&result.inputs)?,
-            Proving::Remote => self
-                .remote_prover
-                .as_ref()
-                .ok_or(WalletError::RemoteProverMissing)?
-                .prove_merge(&result.inputs)?,
+        let proof = match remote {
+            Some(remote) => remote.prove_merge(&result.inputs)?,
+            None => self.native_prover.prove_merge(&result.inputs)?,
         };
         verify_merge(&result, &proof)?;
         let merge_ix = MergeTransact {
@@ -452,17 +451,18 @@ impl MobileWallet {
     ) -> Result<(), WalletError> {
         if let Some(output) = &pending.cached_output {
             output.target.validate()?;
-            if let VersionedMessage::V1(message) = &pending.message {
-                let data = message
-                    .instructions
-                    .get(1)
-                    .and_then(|ix| ix.data.get(1..))
-                    .ok_or_else(|| invalid("invalid cached merge message"))?;
-                let merge = spr_interface::instruction::MergeTransactIxData::deserialize(data)
-                    .map_err(|_| invalid("invalid cached merge message"))?;
-                if merge.expiry_unix_ts <= now() as u64 {
-                    return Err(invalid("merge proof expired; prepare again"));
-                }
+            let VersionedMessage::V1(message) = &pending.message else {
+                return Err(ClientError::UnsupportedTransactionVersion.into());
+            };
+            let data = message
+                .instructions
+                .get(1)
+                .and_then(|ix| ix.data.get(1..))
+                .ok_or_else(|| invalid("invalid cached merge message"))?;
+            let merge = spr_interface::instruction::MergeTransactIxData::deserialize(data)
+                .map_err(|_| invalid("invalid cached merge message"))?;
+            if merge.expiry_unix_ts <= now() as u64 {
+                return Err(invalid("merge proof expired; prepare again"));
             }
         }
         if !pending.cache_inputs.is_empty() {
