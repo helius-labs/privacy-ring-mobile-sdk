@@ -310,7 +310,7 @@ mod tests {
         let (transport, requests) = fake(answer);
         (
             transport
-                .configured_prover(PROVER_URL.to_string(), false, None, None, false)
+                .configured_prover(PROVER_URL.to_string(), false, None, None, None, false)
                 .unwrap(),
             requests,
         )

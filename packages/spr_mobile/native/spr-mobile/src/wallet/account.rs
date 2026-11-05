@@ -61,6 +61,10 @@ pub struct WalletConfig {
     /// signers. The Rust client owns policy refresh, expiry and re-attestation.
     /// Selection is explicit and independent of the prover URL.
     pub prover_tee_network: Option<crate::ProverTeeNetwork>,
+    /// Download the signed policy of `prover_tee_network` from this HTTPS URL
+    /// instead of the one the SDK pins, such as a staging deployment's. The
+    /// network's pinned signers still verify it. Needs `prover_tee_network`.
+    pub prover_tee_policy_url: Option<String>,
     /// Refuse queue fallback and status polling for remote proofs.
     pub prover_sync_only: Option<bool>,
     /// The most notes a spend takes on the device, 1 to 40; 40 when `None`.
@@ -251,6 +255,7 @@ impl MobileWallet {
                             config.require_prover_tee.unwrap_or(false),
                             config.prover_tee_policy.as_deref(),
                             config.prover_tee_network,
+                            config.prover_tee_policy_url.as_deref(),
                             config.prover_sync_only.unwrap_or(false),
                         )
                         .map(Arc::new)

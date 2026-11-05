@@ -3110,6 +3110,7 @@ const _: fn() = || {
         let _: Option<bool> = WalletConfig.require_prover_tee;
         let _: Option<String> = WalletConfig.prover_tee_policy;
         let _: Option<spr_mobile::ProverTeeNetwork> = WalletConfig.prover_tee_network;
+        let _: Option<String> = WalletConfig.prover_tee_policy_url;
         let _: Option<bool> = WalletConfig.prover_sync_only;
         let _: Option<u32> = WalletConfig.max_spend_inputs;
         let _: Option<u64> = WalletConfig.reuse_notes_ms;
@@ -4447,6 +4448,7 @@ impl SseDecode for spr_mobile::WalletConfig {
         let mut var_proverTeePolicy = <Option<String>>::sse_decode(deserializer);
         let mut var_proverTeeNetwork =
             <Option<spr_mobile::ProverTeeNetwork>>::sse_decode(deserializer);
+        let mut var_proverTeePolicyUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_proverSyncOnly = <Option<bool>>::sse_decode(deserializer);
         let mut var_maxSpendInputs = <Option<u32>>::sse_decode(deserializer);
         let mut var_reuseNotesMs = <Option<u64>>::sse_decode(deserializer);
@@ -4463,6 +4465,7 @@ impl SseDecode for spr_mobile::WalletConfig {
             require_prover_tee: var_requireProverTee,
             prover_tee_policy: var_proverTeePolicy,
             prover_tee_network: var_proverTeeNetwork,
+            prover_tee_policy_url: var_proverTeePolicyUrl,
             prover_sync_only: var_proverSyncOnly,
             max_spend_inputs: var_maxSpendInputs,
             reuse_notes_ms: var_reuseNotesMs,
@@ -5648,6 +5651,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<spr_mobile::WalletConfig> {
             self.0.require_prover_tee.into_into_dart().into_dart(),
             self.0.prover_tee_policy.into_into_dart().into_dart(),
             self.0.prover_tee_network.into_into_dart().into_dart(),
+            self.0.prover_tee_policy_url.into_into_dart().into_dart(),
             self.0.prover_sync_only.into_into_dart().into_dart(),
             self.0.max_spend_inputs.into_into_dart().into_dart(),
             self.0.reuse_notes_ms.into_into_dart().into_dart(),
@@ -6789,6 +6793,7 @@ impl SseEncode for spr_mobile::WalletConfig {
         <Option<bool>>::sse_encode(self.require_prover_tee, serializer);
         <Option<String>>::sse_encode(self.prover_tee_policy, serializer);
         <Option<spr_mobile::ProverTeeNetwork>>::sse_encode(self.prover_tee_network, serializer);
+        <Option<String>>::sse_encode(self.prover_tee_policy_url, serializer);
         <Option<bool>>::sse_encode(self.prover_sync_only, serializer);
         <Option<u32>>::sse_encode(self.max_spend_inputs, serializer);
         <Option<u64>>::sse_encode(self.reuse_notes_ms, serializer);

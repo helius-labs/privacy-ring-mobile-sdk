@@ -25,7 +25,10 @@
 //! The remote proof comes from the prover at `ZOLANA_E2E_PROVER_URL`, such as
 //! devnet-e's attested prover (`https://dd73hh473h6ha.cloudfront.net`),
 //! asked through the test's transport. For remote URLs, set
-//! `ZOLANA_E2E_TEE_POLICY` to the path of a reviewed policy JSON file.
+//! `ZOLANA_E2E_TEE_POLICY` to the path of a reviewed policy JSON file, or
+//! `ZOLANA_E2E_TEE_NETWORK` (`mainnet` or `devnet`) for the signed policy the
+//! SDK pins; `ZOLANA_E2E_TEE_POLICY_URL` downloads that network's signed policy
+//! from another URL, such as a staging deployment's.
 //!
 //! `ZOLANA_E2E_KEY_DIR` keeps downloaded proving keys between runs.
 //! `ZOLANA_E2E_PRIORITY_FEE` gives every transaction that priority fee, in
@@ -117,6 +120,7 @@ fn config() -> WalletConfig {
                 _ => panic!("ZOLANA_E2E_TEE_NETWORK must be mainnet or devnet"),
             }
         }),
+        prover_tee_policy_url: env::var("ZOLANA_E2E_TEE_POLICY_URL").ok(),
         prover_sync_only: env::var("ZOLANA_E2E_SYNC_ONLY").ok().map(|v| v == "true"),
         max_spend_inputs: None,
         reuse_notes_ms: None,
@@ -659,6 +663,7 @@ fn register_deposit_transfer_and_receive() {
         prover_url: Some(REPLAYING_PROVER.to_string()),
         prover_tee_policy: None,
         prover_tee_network: None,
+        prover_tee_policy_url: None,
         require_prover_tee: None,
         ..config()
     };

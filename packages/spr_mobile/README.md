@@ -23,7 +23,11 @@ final config = WalletConfig(
 The Rust SDK downloads the network's signed policy, verifies it with its pinned
 signing keys, and checks network, version and expiry. It refreshes the policy
 with attestation and re-attests once after an enclave key rotation. URLs never
-select a policy. Custom deployments may supply a complete reviewed static policy
+select a policy. `proverTeePolicyUrl` downloads the selected network's signed
+policy from another HTTPS URL, such as a staging deployment's
+(`https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/v2/devnet.json` for devnet
+staging); the network's pinned signers still verify it, and it needs
+`proverTeeNetwork`. Custom deployments may supply a complete reviewed static policy
 as `proverTeePolicy` instead; setting both fields is rejected. Applications must
 keep static policies current themselves. Never learn trust pins from the prover
 being verified. Missing policy raises `WalletError.proverPolicyMissing` before
@@ -805,7 +809,8 @@ await wallet.spend(
   its route below `proverUrl`. A remote prover that does not attest fails
   every remote spend: no setting sends it plaintext. Set
   `requireProverTee: true` to enforce this for a localhost proxy too.
-  Select `proverTeeNetwork` for an SDK-pinned signed policy, or supply
+  Select `proverTeeNetwork` for an SDK-pinned signed policy, with
+  `proverTeePolicyUrl` to download it from another URL, or supply
   `proverTeePolicy` for a custom deployment. Signed policies refresh automatically
   and fail closed on invalid signatures, expiry or rollback. Static policies
   must be updated through trusted application configuration, never by the prover

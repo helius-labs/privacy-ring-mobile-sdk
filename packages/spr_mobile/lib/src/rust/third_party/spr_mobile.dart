@@ -1333,6 +1333,11 @@ class WalletConfig {
   /// Selection is explicit and independent of the prover URL.
   final ProverTeeNetwork? proverTeeNetwork;
 
+  /// Download the signed policy of `prover_tee_network` from this HTTPS URL
+  /// instead of the one the SDK pins, such as a staging deployment's. The
+  /// network's pinned signers still verify it. Needs `prover_tee_network`.
+  final String? proverTeePolicyUrl;
+
   /// Refuse queue fallback and status polling for remote proofs.
   final bool? proverSyncOnly;
 
@@ -1376,6 +1381,7 @@ class WalletConfig {
     this.requireProverTee,
     this.proverTeePolicy,
     this.proverTeeNetwork,
+    this.proverTeePolicyUrl,
     this.proverSyncOnly,
     this.maxSpendInputs,
     this.reuseNotesMs,
@@ -1395,6 +1401,7 @@ class WalletConfig {
       requireProverTee.hashCode ^
       proverTeePolicy.hashCode ^
       proverTeeNetwork.hashCode ^
+      proverTeePolicyUrl.hashCode ^
       proverSyncOnly.hashCode ^
       maxSpendInputs.hashCode ^
       reuseNotesMs.hashCode ^
@@ -1416,6 +1423,7 @@ class WalletConfig {
           requireProverTee == other.requireProverTee &&
           proverTeePolicy == other.proverTeePolicy &&
           proverTeeNetwork == other.proverTeeNetwork &&
+          proverTeePolicyUrl == other.proverTeePolicyUrl &&
           proverSyncOnly == other.proverSyncOnly &&
           maxSpendInputs == other.maxSpendInputs &&
           reuseNotesMs == other.reuseNotesMs &&
