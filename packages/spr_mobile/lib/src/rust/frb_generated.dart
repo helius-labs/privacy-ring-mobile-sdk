@@ -6804,12 +6804,11 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
 
   /// Wait for a transaction the application sent itself, as
   /// [`Self::submit`] waits for a send whose response was lost: until Solana
-  /// confirms it and, for shielded-pool transactions, the indexer has it,
-  /// so the next balance or spend reads the notes it created and not the
-  /// ones it spent; the chain's error when the chain refused it;
-  /// [`WalletError::TransactionOutcomeUnknown`] when history cannot
-  /// establish its outcome, even after blockhash expiry. A spend's notes
-  /// are released with every outcome but the unknown one.
+  /// confirms it, whether or not the indexer has it yet; the chain's error
+  /// when the chain refused it; [`WalletError::TransactionOutcomeUnknown`]
+  /// when history cannot establish its outcome, even after blockhash
+  /// expiry. A spend's notes are released with every outcome but the
+  /// unknown one.
   ///
   /// `signature` is the transaction signature, the fee payer's; it is
   /// checked against `pending` before anything is asked.
@@ -7079,7 +7078,10 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
       RustLib.instance.api.sprMobileMobileWalletSpendableNotes(that: this);
 
   /// Attach the signatures, send, and wait as [`Self::confirm`] does.
-  /// Returns the signature.
+  /// Returns the signature once Solana confirms the transaction, whether or
+  /// not the indexer has it yet: the next balance, activity or spend waits
+  /// for the indexer to reach the RPC's confirmed slot, so it reads the
+  /// notes the transaction created and not the ones it spent.
   ///
   /// `signatures` follows [`PreparedTransaction::signers`]; each is checked
   /// before anything is sent. A spend's notes are released once the send
@@ -7145,9 +7147,9 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
 
   /// Recover a shielded-pool transaction by its signature, including after
   /// an application restart. Searches RPC history and accepts a matching
-  /// indexed event when RPC history is unavailable. Success waits for the
-  /// indexer so balances include the transaction; confirmed chain errors
-  /// are returned immediately.
+  /// indexed event when RPC history is unavailable. Returns once it is
+  /// confirmed, whether or not the indexer has it yet; confirmed chain
+  /// errors are returned immediately.
   ///
   /// Missing history returns [`WalletError::TransactionOutcomeUnknown`],
   /// even after blockhash expiry: absence does not prove it never landed.

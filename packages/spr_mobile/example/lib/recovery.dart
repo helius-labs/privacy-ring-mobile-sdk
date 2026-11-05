@@ -113,13 +113,12 @@ class MemoryPendingSends implements PendingSends {
 /// Returns the signature.
 ///
 /// The signature stays saved after [WalletError.transactionOutcomeUnknown],
-/// [WalletError.client] (including an indexing timeout after the payment
-/// succeeded), or [WalletError.walletClosed] when the application locked
-/// during the send.
-/// [settlePendingSend] then waits for it before anything else is sent. Any
-/// other result is the outcome, and the signature is dropped. Missing
-/// history stays unknown even after blockhash expiry; do not automatically
-/// prepare a replacement payment.
+/// or [WalletError.walletClosed] when the application locked during the
+/// send. [settlePendingSend] then waits for it before anything else is sent.
+/// Any other result is the outcome, and the signature is dropped: a returned
+/// signature is a payment that landed, even before the indexer has it.
+/// Missing history stays unknown even after blockhash expiry; do not
+/// automatically prepare a replacement payment.
 Future<String> saveAndSend(
   SprWallet wallet,
   SolanaSigner signer,
@@ -147,7 +146,6 @@ Future<String> saveAndSend(
     await wallet.submit(transaction, [signed]);
   } on WalletError catch (error) {
     if (error is! WalletError_TransactionOutcomeUnknown &&
-        error is! WalletError_Client &&
         error is! WalletError_WalletClosed) {
       await pending.delete(account);
     }
@@ -159,14 +157,12 @@ Future<String> saveAndSend(
 
 /// Waits for the send [pending] holds for [wallet]'s account, such as one
 /// the application was closed during, until its outcome is known: Solana
-/// confirmed it and the indexer has it, so balances include it. Returns its
-/// signature, or `null` when no send is pending. Call it after opening and
-/// before the next spend.
+/// confirmed it, or the chain refused it. Returns its signature, or `null`
+/// when no send is pending. Call it after opening and before the next spend.
 ///
 /// Fails as `SprWallet.waitForTransaction` does. The saved send is
 /// dropped once the outcome is known, including the chain's refusal; it
-/// stays saved after [WalletError.transactionOutcomeUnknown],
-/// [WalletError.client] (including indexing failures after confirmation), or
+/// stays saved after [WalletError.transactionOutcomeUnknown] or
 /// [WalletError.walletClosed], to look it up again before anything else is
 /// sent.
 Future<String?> settlePendingSend(
@@ -183,7 +179,6 @@ Future<String?> settlePendingSend(
     );
   } on WalletError catch (error) {
     if (error is! WalletError_TransactionOutcomeUnknown &&
-        error is! WalletError_Client &&
         error is! WalletError_WalletClosed) {
       await pending.delete(account);
     }

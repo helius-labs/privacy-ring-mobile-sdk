@@ -93,6 +93,11 @@ void main() {
     SprWallet wallet,
     String signature,
   ) async {
+    // A send returns once Solana confirms it. The activity read waits for
+    // the indexer to reach the RPC's slot, so the lookup finds it indexed.
+    final expected = (await wallet.activity())
+        .where((row) => row.signature == signature)
+        .toList();
     final transport = AppTransport();
     final cold = await SprWallet.openWithKeys(
       config: await config(),
@@ -128,9 +133,6 @@ void main() {
         ),
         isEmpty,
       );
-      final expected = (await wallet.activity())
-          .where((row) => row.signature == signature)
-          .toList();
       expect(result.entries, orderedEquals(expected));
       final overview = await wallet.overview();
       expect(
@@ -239,8 +241,8 @@ void main() {
     await checkFreshLookup(recipient, signature);
     await checkFreshLookup(collector, signature);
 
-    // The transfer returned once the indexer had it, so both balances
-    // already read its notes.
+    // Balances wait for the indexer to reach the RPC's slot, so they read
+    // the transfer's notes.
     expect(await sender.privateBalance(), senderBefore - lamports - fee);
     expect(await recipient.privateBalance(), recipientBefore + lamports);
     expect(await collector.privateBalance(), collectorBefore + fee);
