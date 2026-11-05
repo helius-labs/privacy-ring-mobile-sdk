@@ -382,9 +382,11 @@ await wallet.spend(
   outputs, whose notes are all this wallet's own, is a `withdrawal`.
 - **Freshness**: the wallet keeps no chain state. `balances()`,
   `privateBalance()`, `activity()` and every spend read the wallet's notes from
-  the indexer when they run, and `spend` and `deposit` return once the indexer
-  has the transaction, so notes spent by another session or device are never
-  picked. Each of those reads is a full read of the wallet's notes: a screen
+  the indexer when they run, once it has reached the RPC's confirmed slot, so
+  notes spent by the last send or by another session or device are never
+  picked. `spend` and `deposit` return once Solana confirms the transaction,
+  without waiting for the indexer. Each of those reads is a full read of the
+  wallet's notes: a screen
   that shows balances and history calls `overview()`, which returns both from
   one read, and filters by asset itself. With `WalletConfig.reuseNotesMs`, a
   spend prepared within that many milliseconds of the last read takes its
@@ -555,9 +557,11 @@ final text = switch (tx.operation) {
 ```
 
 `confirm` checks that `signature` is the fee payer's signature over
-`tx.message`, waits until Solana confirms it and, for shielded-pool
-transactions, until the indexer has it. `submit(tx, signatures)`
-sends through the wallet's RPC instead.
+`tx.message` and waits until Solana confirms it. `submit(tx, signatures)`
+sends through the wallet's RPC instead. Neither waits for the indexer: a
+returned signature is a payment that landed, even while
+`transaction(signature)` still reports `pendingIndexing`. Do not send it
+again.
 
 - `prepareSpend` takes an optional `feePayer`, for example the application's
   backend. It pays the network fee instead of this account and signs first:
@@ -594,8 +598,8 @@ sends through the wallet's RPC instead.
 - After a restart, call
   `wallet.waitForTransaction(signature, lastValidBlockHeight: height)` with
   the signature saved before sending. It searches RPC history and matching
-  indexed events, returns a confirmed chain error when available, and waits
-  for indexing on success. Missing history remains
+  indexed events, returns a confirmed chain error when available, and
+  returns on success without waiting for indexing. Missing history remains
   `WalletError.transactionOutcomeUnknown`, including after blockhash expiry.
   The optional height stops waiting early; it does not establish non-inclusion.
 - A send can fail after the transaction went out, for example when the RPC
@@ -629,11 +633,11 @@ sends through the wallet's RPC instead.
 - **The app closed while sending**: sign the prepared transaction in the
   application and, before `submit`, save its signature (the fee payer's,
   base58) in storage that survives a restart. Keep it when `submit` fails
-  with `WalletError.transactionOutcomeUnknown`, `WalletError.client`
-  (including an indexing timeout after the payment succeeded), or with
+  with `WalletError.transactionOutcomeUnknown`, or with
   `WalletError.walletClosed` because the app locked during the send; drop it
-  on any other result. Save the transaction's `lastValidBlockHeight` with
-  it. After a restart, call `waitForTransaction(signature,
+  on any other result. A returned signature is a payment that landed, even
+  before the indexer has it. Save the transaction's `lastValidBlockHeight`
+  with it. After a restart, call `waitForTransaction(signature,
   lastValidBlockHeight: height)` before anything else is sent. The example's
   `saveAndSend` and `settlePendingSend` retain the saved send on those errors:
 
@@ -642,9 +646,6 @@ try {
   await saveAndSend(wallet, signer, pending, tx);
 } on WalletError_TransactionOutcomeUnknown {
   // Keep the signature: expiry alone does not make a replacement safe.
-  await settlePendingSend(wallet, pending);
-} on WalletError_Client {
-  // The payment may have succeeded: finish indexing before sending again.
   await settlePendingSend(wallet, pending);
 }
 ```

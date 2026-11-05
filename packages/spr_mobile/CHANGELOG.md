@@ -2,6 +2,11 @@
 
 Unreleased.
 
+* `submit`, `confirm`, `waitForTransaction` and the methods that sign and
+  submit return once Solana confirms the transaction, without waiting for the
+  indexer: a returned signature is a payment that landed. The next balance,
+  activity or spend waits for the indexer to reach the RPC's confirmed slot.
+
 * Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
   `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
   verified by the same pinned signers. It needs `proverTeeNetwork`; a plain
