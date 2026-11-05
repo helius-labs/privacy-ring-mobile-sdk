@@ -2,6 +2,11 @@
 
 Unreleased.
 
+* Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
+  `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
+  verified by the same pinned signers. It needs `proverTeeNetwork`; a plain
+  HTTP URL or one without a network fails before any request.
+
 * Add `transaction(signature, prepared: payment)` to authenticate dummy padding
   from saved output openings. Exact-balance payment details can be read after
   restoring the prepared transaction without scanning wallet history. Signature-only

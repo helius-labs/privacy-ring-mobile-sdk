@@ -3569,8 +3569,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletConfig dco_decode_wallet_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return WalletConfig(
       rpcUrl: dco_decode_String(arr[0]),
       indexerUrl: dco_decode_String(arr[1]),
@@ -3582,11 +3582,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       requireProverTee: dco_decode_opt_box_autoadd_bool(arr[7]),
       proverTeePolicy: dco_decode_opt_String(arr[8]),
       proverTeeNetwork: dco_decode_opt_box_autoadd_prover_tee_network(arr[9]),
-      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[10]),
-      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[11]),
-      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[12]),
-      mints: dco_decode_opt_list_mint_config(arr[13]),
-      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[14]),
+      proverTeePolicyUrl: dco_decode_opt_String(arr[10]),
+      proverSyncOnly: dco_decode_opt_box_autoadd_bool(arr[11]),
+      maxSpendInputs: dco_decode_opt_box_autoadd_u_32(arr[12]),
+      reuseNotesMs: dco_decode_opt_box_autoadd_u_64(arr[13]),
+      mints: dco_decode_opt_list_mint_config(arr[14]),
+      priorityFeeLamports: dco_decode_opt_box_autoadd_u_64(arr[15]),
     );
   }
 
@@ -5019,6 +5020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_proverTeeNetwork = sse_decode_opt_box_autoadd_prover_tee_network(
       deserializer,
     );
+    var var_proverTeePolicyUrl = sse_decode_opt_String(deserializer);
     var var_proverSyncOnly = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_maxSpendInputs = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_reuseNotesMs = sse_decode_opt_box_autoadd_u_64(deserializer);
@@ -5035,6 +5037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       requireProverTee: var_requireProverTee,
       proverTeePolicy: var_proverTeePolicy,
       proverTeeNetwork: var_proverTeeNetwork,
+      proverTeePolicyUrl: var_proverTeePolicyUrl,
       proverSyncOnly: var_proverSyncOnly,
       maxSpendInputs: var_maxSpendInputs,
       reuseNotesMs: var_reuseNotesMs,
@@ -6471,6 +6474,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.proverTeeNetwork,
       serializer,
     );
+    sse_encode_opt_String(self.proverTeePolicyUrl, serializer);
     sse_encode_opt_box_autoadd_bool(self.proverSyncOnly, serializer);
     sse_encode_opt_box_autoadd_u_32(self.maxSpendInputs, serializer);
     sse_encode_opt_box_autoadd_u_64(self.reuseNotesMs, serializer);

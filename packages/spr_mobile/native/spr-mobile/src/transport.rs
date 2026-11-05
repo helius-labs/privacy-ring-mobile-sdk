@@ -24,6 +24,44 @@ pub enum ProverTeeNetwork {
     Devnet,
 }
 
+/// The release keys and threshold the SDK pins for every network in its
+/// `tee/signers.json`, which also verify a policy downloaded from
+/// `prover_tee_policy_url`. The SDK keeps its copy private;
+/// `the_signers_of_a_policy_url_are_the_sdks` fails when they differ.
+const RELEASE_KEYS: [&str; 1] =
+    ["1fe5d29c79064ea17a16308452040b799df8aeaaae588d44a527a8da9ffa924a"];
+const RELEASE_THRESHOLD: usize = 1;
+
+/// The signed policy of `network`, downloaded from `url` instead of the URL
+/// the SDK pins when one is given.
+fn signed_policy(
+    network: ProverTeeNetwork,
+    url: Option<&str>,
+) -> Result<spr_client::prover::tee::SignedTeePolicy, WalletError> {
+    use spr_client::prover::tee::{PolicySigners, SignedTeePolicy, TeeNetwork};
+    let network = match network {
+        ProverTeeNetwork::Mainnet => TeeNetwork::Mainnet,
+        ProverTeeNetwork::Devnet => TeeNetwork::Devnet,
+    };
+    let Some(url) = url else {
+        return Ok(SignedTeePolicy::for_network(network));
+    };
+    let keys = RELEASE_KEYS
+        .iter()
+        .map(|key| {
+            hex::decode(key)
+                .ok()
+                .and_then(|key| key.try_into().ok())
+                .expect("a pinned release key")
+        })
+        .collect();
+    PolicySigners::new(network.as_str(), keys, RELEASE_THRESHOLD)
+        .and_then(|signers| SignedTeePolicy::new(url, signers))
+        .map_err(|error| WalletError::Client {
+            message: format!("proverTeePolicyUrl: {error}"),
+        })
+}
+
 /// One HTTP request of the wallet.
 pub struct TransportRequest {
     /// `POST` for Solana RPC and indexer calls and proof requests, `GET` for
@@ -148,11 +186,18 @@ impl Transport {
         require_tee: bool,
         policy_json: Option<&str>,
         network: Option<ProverTeeNetwork>,
+        policy_url: Option<&str>,
         sync_only: bool,
     ) -> Result<ProverClient, WalletError> {
         if policy_json.is_some() && network.is_some() {
             return Err(WalletError::Client {
                 message: "choose proverTeeNetwork or proverTeePolicy, not both".into(),
+            });
+        }
+        if policy_url.is_some() && network.is_none() {
+            return Err(WalletError::Client {
+                message: "proverTeePolicyUrl needs proverTeeNetwork, whose signers verify it"
+                    .into(),
             });
         }
         let mut client = ProverClient::with_client(
@@ -163,12 +208,7 @@ impl Transport {
             },
         );
         if let Some(network) = network {
-            use spr_client::prover::tee::{SignedTeePolicy, TeeNetwork};
-            let network = match network {
-                ProverTeeNetwork::Mainnet => TeeNetwork::Mainnet,
-                ProverTeeNetwork::Devnet => TeeNetwork::Devnet,
-            };
-            client = client.with_signed_tee(SignedTeePolicy::for_network(network));
+            client = client.with_signed_tee(signed_policy(network, policy_url)?);
         } else if require_tee || policy_json.is_some() || client.has_tee() {
             use spr_client::prover::tee::TeePolicy;
             let json = policy_json.ok_or(WalletError::ProverPolicyMissing)?;
@@ -399,6 +439,7 @@ pub(crate) mod tests {
             require_prover_tee: None,
             prover_tee_policy: None,
             prover_tee_network: None,
+            prover_tee_policy_url: None,
             prover_sync_only: None,
             max_spend_inputs: None,
             reuse_notes_ms: None,
@@ -640,6 +681,7 @@ mod proxy_tests {
                     true,
                     None,
                     Some(network),
+                    None,
                     false,
                 )
                 .unwrap();
@@ -658,6 +700,81 @@ mod proxy_tests {
     }
 
     #[test]
+    fn the_signers_of_a_policy_url_are_the_sdks() {
+        use spr_client::prover::tee::{SignedTeePolicy, TeeNetwork};
+        for (network, pinned, name) in [
+            (ProverTeeNetwork::Mainnet, TeeNetwork::Mainnet, "mainnet"),
+            (ProverTeeNetwork::Devnet, TeeNetwork::Devnet, "devnet"),
+        ] {
+            let url = format!("https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/{name}.json");
+            assert_eq!(
+                format!("{:?}", signed_policy(network, Some(&url)).unwrap()),
+                format!("{:?}", SignedTeePolicy::for_network(pinned)),
+            );
+        }
+    }
+
+    #[test]
+    fn a_policy_url_downloads_the_networks_policy_from_there() {
+        let url = "https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/v2/devnet.json";
+        let (transport, requests) = tests::fake(|_| {
+            Ok(TransportResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: POLICY.as_bytes().to_vec(),
+            })
+        });
+        let prover = transport
+            .configured_prover(
+                "https://prover.example".into(),
+                true,
+                None,
+                Some(ProverTeeNetwork::Devnet),
+                Some(url),
+                false,
+            )
+            .unwrap();
+        assert!(prover.has_tee());
+        // An unsigned policy must fail before attestation or a proof request.
+        assert!(prover.prove(&Merge).is_err());
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            (requests[0].method.as_str(), requests[0].url.as_str()),
+            ("GET", url)
+        );
+    }
+
+    #[test]
+    fn a_policy_url_needs_a_network_and_https() {
+        for (network, url) in [
+            (
+                None,
+                "https://d3gbdb0egjwcw9.cloudfront.net/tee-policy/v2/devnet.json",
+            ),
+            (
+                Some(ProverTeeNetwork::Devnet),
+                "http://policy.example/devnet.json",
+            ),
+            (Some(ProverTeeNetwork::Devnet), "not a url"),
+        ] {
+            let (transport, requests) = tests::fake(|_| panic!("a refused policy URL sent HTTP"));
+            assert!(matches!(
+                transport.configured_prover(
+                    "https://prover.example".into(),
+                    true,
+                    None,
+                    network,
+                    Some(url),
+                    false,
+                ),
+                Err(WalletError::Client { .. })
+            ));
+            assert!(requests.lock().unwrap().is_empty());
+        }
+    }
+
+    #[test]
     fn conflicting_policies_fail_before_http() {
         let (transport, requests) = tests::fake(|_| panic!("conflicting policies sent HTTP"));
         assert!(transport
@@ -666,6 +783,7 @@ mod proxy_tests {
                 true,
                 Some(POLICY),
                 Some(ProverTeeNetwork::Devnet),
+                None,
                 false,
             )
             .is_err());
@@ -683,7 +801,7 @@ mod proxy_tests {
         ] {
             let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
             assert!(matches!(
-                transport.configured_prover(url.into(), true, None, None, false),
+                transport.configured_prover(url.into(), true, None, None, None, false),
                 Err(WalletError::ProverPolicyMissing)
             ));
             assert!(requests.lock().unwrap().is_empty());
@@ -691,7 +809,14 @@ mod proxy_tests {
         // false only exempts loopback; it never permits an unpinned remote.
         let (transport, requests) = tests::fake(|_| panic!("missing policy sent HTTP"));
         assert!(matches!(
-            transport.configured_prover("https://prover.example".into(), false, None, None, false),
+            transport.configured_prover(
+                "https://prover.example".into(),
+                false,
+                None,
+                None,
+                None,
+                false
+            ),
             Err(WalletError::ProverPolicyMissing)
         ));
         assert!(requests.lock().unwrap().is_empty());
@@ -713,7 +838,7 @@ mod proxy_tests {
                 })
             });
             let prover = transport
-                .configured_prover(url.into(), false, Some(POLICY), None, false)
+                .configured_prover(url.into(), false, Some(POLICY), None, None, false)
                 .unwrap();
             assert!(prover.prove(&Merge).is_err());
             let requests = requests.lock().unwrap();
@@ -742,6 +867,7 @@ mod proxy_tests {
                     "https://prover.example".into(),
                     false,
                     Some(policy),
+                    None,
                     None,
                     false
                 )
@@ -780,6 +906,7 @@ mod proxy_tests {
                     false,
                     None,
                     None,
+                    None,
                     true,
                 )
                 .unwrap();
@@ -804,6 +931,7 @@ mod proxy_tests {
                 "http://localhost:1234/v1/spr".into(),
                 true,
                 Some(POLICY),
+                None,
                 None,
                 true,
             )
