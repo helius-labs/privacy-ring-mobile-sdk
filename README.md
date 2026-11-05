@@ -127,6 +127,20 @@ rotate the key, run `dart run build_tool gen-key` in
 `packages/zolana_mobile/cargokit/build_tool`, then replace the secret and the
 public key together. Releases signed with the old key stop verifying.
 
+## Wallet implementation
+
+[`wallet.rs`](packages/zolana_mobile/native/zolana-mobile/src/wallet.rs) holds
+the wallet state and public re-exports.
+Its modules separate account setup, balances, note descriptions, deposits,
+spends, merges, cache run policy, prepared snapshots, submission, activity
+history and activity lookup. Unit tests live in `wallet/tests/` and
+module-specific `tests.rs` files.
+
+Mobile resolves ordered note IDs, builds cached merges, verifies cache accounts,
+and reads activity for a single signature. These helpers stay private to the
+wallet modules. The SDK supplies the transaction, proving and decryption
+primitives.
+
 ## Current boundary
 
 `ZolanaWallet` builds and proves transactions; the application signs them, and

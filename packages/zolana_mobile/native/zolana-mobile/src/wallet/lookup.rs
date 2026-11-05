@@ -1,22 +1,45 @@
 //! Signature-scoped activity, using the protocol's existing readers. No
 //! transaction or nullifier history queries belong on this path.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    str::FromStr,
+};
 
+use solana_pubkey::Pubkey;
 use solana_rpc_client_api::request::RpcRequest;
+use solana_signature::Signature;
 use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
-use zolana_client::{fetch_spl_asset_registrations, rpc::solana_rpc::ConfirmedInstructionGroups};
+use zolana_client::{
+    fetch_spl_asset_registrations, rpc::solana_rpc::ConfirmedInstructionGroups, ClientError, Rpc,
+};
 use zolana_interface::{
     event::OutputDataEncoding,
     instruction::{fetch_tag, settlement_accounts, tag, CircuitId, TransactIxData},
+    PROGRAM_ID_PUBKEY,
 };
+use zolana_keypair::PublicKey;
 use zolana_transaction::{
-    decrypt, serialization::confidential::Confidential, verify_owned, AssetRegistry,
-    EncryptedScheme, HistoryEntry, HistoryKind, ShieldedKeys, ShieldedTransaction, SOL_MINT,
+    decrypt, instructions::transact::SppProofOutputUtxo, serialization::confidential::Confidential,
+    verify_owned, AssetRegistry, EncryptedScheme, HistoryEntry, HistoryKind, ShieldedKeys,
+    ShieldedTransaction, TransactionError, SOL_MINT,
 };
 
-use super::*;
-use crate::activity::{TransactionLookup, TransactionLookupStatus as Status, TransactionOutput};
+use super::{
+    history,
+    prepared::PreparedTransaction,
+    types::OutputOpening,
+    util::{beside, invalid},
+    MobileWallet,
+};
+use crate::{
+    activity::{
+        self, ActivityEntry, TransactionLookup, TransactionLookupStatus as Status,
+        TransactionOutput,
+    },
+    asset::mint_name,
+    error::WalletError,
+};
 
 type Confirmed = EncodedConfirmedTransactionWithStatusMeta;
 
@@ -159,7 +182,7 @@ fn padding_commitments(outputs: &[OutputOpening]) -> Result<HashSet<(u16, [u8; 3
                 .blinding
                 .as_slice()
                 .try_into()
-                .map_err(|_| cache::invalid("invalid output blinding"))?;
+                .map_err(|_| invalid("invalid output blinding"))?;
             let dummy = SppProofOutputUtxo {
                 blinding,
                 ..Default::default()
@@ -580,6 +603,45 @@ fn transact_context(
         });
     }
     None
+}
+
+impl MobileWallet {
+    /// Fetch only the shielded events of `signature` and their confirmed
+    /// Solana transaction, then decrypt this wallet's rows. Does not scan or
+    /// warm the wallet's history or spendable-note cache. Asset/recipient
+    /// registry reads may be needed, but no history pages are fetched.
+    ///
+    /// A cold wallet can read its default-ring outgoing transfers and public
+    /// withdrawals using its transaction viewing key, without old input notes.
+    /// `outputs` keeps each private payment and public withdrawal separate,
+    /// excluding own change and padding. Block time and network fee come from
+    /// the same confirmed RPC read, including when indexing is still pending.
+    /// `Incomplete` reports unsupported spends or missing metadata rather than
+    /// returning an incorrect empty result. Recipient-tagged dummy padding
+    /// (possible on an exact-balance private send) is also incomplete: a cold
+    /// reader cannot authenticate it as padding without an output opening.
+    /// Use [`Self::transaction_with_prepared`] when the prepared spend was
+    /// saved. Only `Ready` with no entries means there are no activity rows
+    /// for this wallet's configured assets.
+    pub fn transaction(&self, signature: String) -> Result<TransactionLookup, WalletError> {
+        transaction(self, signature, None)
+    }
+
+    /// Like [`Self::transaction`], with output openings from a prepared spend
+    /// (including one restored after restart). Matching dummy commitments let
+    /// an exact-balance send be read without input-note history. Other outputs
+    /// and public settlements are verified as usual; saved amounts are not
+    /// used to infer the result. Unmatched openings cannot hide unreadable
+    /// outputs.
+    ///
+    /// This reads activity details; use [`Self::confirm`] to confirm a payment.
+    pub fn transaction_with_prepared(
+        &self,
+        signature: String,
+        pending: &PreparedTransaction,
+    ) -> Result<TransactionLookup, WalletError> {
+        transaction(self, signature, Some(pending))
+    }
 }
 
 #[cfg(test)]

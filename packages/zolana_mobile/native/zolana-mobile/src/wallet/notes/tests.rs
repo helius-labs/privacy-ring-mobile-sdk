@@ -2,8 +2,8 @@ use super::*;
 use crate::{
     error::WalletError,
     wallet::{
-        nullifiers,
         tests::{note, open, unsigned},
+        util::nullifiers,
     },
 };
 use solana_keypair::Keypair;

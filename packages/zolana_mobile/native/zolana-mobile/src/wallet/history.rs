@@ -3,12 +3,18 @@
 use std::{
     collections::BTreeSet,
     sync::atomic::{AtomicUsize, Ordering},
+    thread,
     time::{Duration, Instant},
 };
 
 use solana_rpc_client_api::request::RpcRequest;
+use zolana_client::UtxoScanResult;
 
-use super::*;
+use super::MobileWallet;
+use crate::{
+    activity::{self, ActivityEntry},
+    error::WalletError,
+};
 
 /// Concurrent `getBlockTime` reads.
 const BLOCK_TIME_CONCURRENCY: usize = 8;
