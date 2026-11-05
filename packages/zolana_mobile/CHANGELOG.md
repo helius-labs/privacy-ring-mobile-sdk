@@ -28,6 +28,8 @@ Unreleased.
 
 * Pin merged Zolana #521 (SDK 0.8.0-alpha). Gateways now use `/v1/spr`,
   `/attestation` and `Spr-Tee*` headers; update backend proxies together.
+* Pin Zolana #537, whose history reads use paginated indexer responses; the
+  indexer must run the Photon release that serves them.
 * Expose `proverTeeNetwork` for SDK-verified signed mainnet/devnet policies.
   The Rust client owns policy refresh, expiry and re-attestation. Custom static
   `proverTeePolicy` remains supported; supplying both options is rejected.
