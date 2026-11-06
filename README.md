@@ -117,7 +117,9 @@ The `Precompiled binaries` workflow runs on every push to `main`:
 2. It builds the library for Android (`aarch64`, `armv7`, `x86_64`) and iOS
    (device, `arm64` and `x86_64` simulator).
 3. It signs every file and uploads it to the release `precompiled_<hash>`.
-   Targets that the release already has are skipped.
+   The signature covers the crate hash and the file name, which names the
+   target, with the file's SHA-256. Targets whose files the release already
+   has with valid signatures are skipped; the others are built and replaced.
 4. It builds the example app for Android and iOS without Rust, from the
    uploaded files only.
 
