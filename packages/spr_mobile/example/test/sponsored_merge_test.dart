@@ -5,11 +5,14 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:spr_mobile/spr_mobile.dart';
+import 'package:spr_mobile/src/rust/frb_generated.dart' show RustLibApi;
 import 'package:zolana_mobile_demo/sponsored_merge.dart';
 import 'package:zolana_mobile_demo/spend_checks.dart';
 import 'package:zolana_mobile_demo/encoding.dart';
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _Api()));
+
   test(
     'proxy auth is scoped, ciphertext is preserved, redirects are not followed',
     () async {
@@ -199,6 +202,91 @@ void main() {
   });
 
   test(
+    'a refused payment returns to approval and can be signed again',
+    () async {
+      for (final refusal in [
+        const WalletError.notesAlreadySpent(),
+        const WalletError.client(message: 'simulation failed'),
+      ]) {
+        final store = _Store()..data = _approvalRun();
+        final wallet = _Wallet()..submitError = refusal;
+        final flow = SponsoredFlow(
+          wallet,
+          _Signer(),
+          _Backend(),
+          store,
+          _PassingChecks(),
+        );
+        await flow.restore();
+        await expectLater(
+          flow.signAndSend((_) async => true),
+          throwsA(refusal),
+        );
+        expect(flow.paymentSignature, isNull);
+        expect(store.data!['phase'], 'approval');
+        expect(store.data!.containsKey('paymentSignature'), isFalse);
+        wallet.submitError = null;
+        expect(
+          await flow.signAndSend((_) async => true),
+          base58Encode(List.filled(64, 7)),
+        );
+        expect(store.data!['phase'], 'complete');
+        expect(wallet.submissions, hasLength(2));
+      }
+    },
+  );
+
+  test('an open outcome keeps the signed payment submitted', () async {
+    for (final open in [
+      WalletError.transactionOutcomeUnknown(
+        signature: base58Encode(List.filled(64, 7)),
+        message: 'not found',
+      ),
+      const WalletError.walletClosed(),
+    ]) {
+      final store = _Store()..data = _approvalRun();
+      final wallet = _Wallet()..submitError = open;
+      final flow = SponsoredFlow(
+        wallet,
+        _Signer(),
+        _Backend(),
+        store,
+        _PassingChecks(),
+      );
+      await flow.restore();
+      await expectLater(flow.signAndSend((_) async => true), throwsA(open));
+      expect(store.data!['phase'], 'submitted');
+      expect(store.data!['paymentSignature'], base58Encode(List.filled(64, 7)));
+    }
+  });
+
+  test('recovery returns a payment the chain refused to approval', () async {
+    final store = _Store()
+      ..data = {
+        ..._approvalRun(),
+        'phase': 'submitted',
+        'paymentSignature': base58Encode(List.filled(64, 7)),
+      };
+    final wallet = _Wallet()
+      ..confirmError = const WalletError.notesAlreadySpent();
+    final flow = SponsoredFlow(
+      wallet,
+      _Signer(),
+      _Backend(),
+      store,
+      _PassingChecks(),
+    );
+    await flow.restore();
+    await expectLater(
+      flow.reconcilePayment(),
+      throwsA(const WalletError.notesAlreadySpent()),
+    );
+    expect(store.data!['phase'], 'approval');
+    expect(store.data!.containsKey('paymentSignature'), isFalse);
+    expect(wallet.submissions, isEmpty);
+  });
+
+  test(
     'plans by tree before requesting a run and avoids singleton rounds',
     () async {
       final wallet = _Wallet();
@@ -314,6 +402,31 @@ void main() {
   });
 }
 
+/// A run whose payment is proved and saved, waiting for the user's approval.
+Map<String, dynamic> _approvalRun() => {
+  'version': 1,
+  'backend': 'https://backend.example/',
+  'run': {
+    'id': 'run',
+    'slots': 1,
+    'target': {
+      'sponsor': 'sponsor',
+      'nonce': 1,
+      'treeId': 0,
+      'expiresAt': 2000000000,
+      'maxPriorityFeeLamports': 10000,
+      'computeUnitLimit': 400000,
+    },
+  },
+  'mint': null,
+  'merges': [],
+  'phase': 'approval',
+  'payment': 'payment-snapshot',
+  'requestedOutputs': [
+    {'kind': 'public', 'recipient': 'recipient', 'amount': '5'},
+  ],
+};
+
 class _Store implements SponsoredStore {
   Map<String, dynamic>? data;
   bool failWrites = false, failCompletion = false;
@@ -373,6 +486,7 @@ class _Backend implements SponsoredBackend {
 class _Wallet implements SprWallet {
   int prepares = 0;
   bool unknown = false, replayFails = false;
+  Object? submitError, confirmError;
   final submissions = <List<int>>[];
   final selections = <List<String>>[];
   List<SpendableNote> notes = [
@@ -428,6 +542,7 @@ class _Wallet implements SprWallet {
         message: 'not found',
       );
     }
+    if (confirmError case final error?) throw error;
   }
 
   @override
@@ -438,6 +553,7 @@ class _Wallet implements SprWallet {
     expect(transaction.message, [1, 2, 3]);
     submissions.add(signatures.single);
     if (replayFails) throw const WalletError.notesAlreadySpent();
+    if (submitError case final error?) throw error;
     return base58Encode(signatures.single);
   }
 
@@ -449,12 +565,49 @@ class _Transaction implements PreparedTransaction {
   @override
   Uint8List get message => Uint8List.fromList([1, 2, 3]);
   @override
+  BigInt get priorityFeeLamports => BigInt.from(5000);
+  @override
+  List<OutputOpening> get outputs => const [];
+  @override
   CachedOutput get cachedOutput => _CachedOutput();
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _CachedOutput implements CachedOutput {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Signer implements SolanaSigner {
+  @override
+  String get publicKey => 'owner';
+  @override
+  Future<Uint8List> signMessage(
+    Uint8List message, {
+    PreparedTransaction? transaction,
+  }) async => Uint8List.fromList(List.filled(64, 7));
+}
+
+class _PassingChecks implements SpendChecks {
+  @override
+  Future<List<String>> verify({
+    required Uint8List message,
+    required List<OutputOpening> openings,
+    required String sender,
+    required SpendRequest request,
+  }) async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Api implements RustLibApi {
+  @override
+  Future<String> sprMobileCacheTargetCacheAddress({
+    required CacheTarget that,
+  }) async => 'cache';
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
