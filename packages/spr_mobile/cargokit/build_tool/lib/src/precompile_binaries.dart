@@ -9,9 +9,11 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 
 import 'artifacts_provider.dart';
+import 'binary_signature.dart';
 import 'builder.dart';
 import 'cargo.dart';
 import 'crate_hash.dart';
+import 'download.dart';
 import 'options.dart';
 import 'rustup.dart';
 import 'target.dart';
@@ -107,13 +109,11 @@ class PrecompileBinaries {
         remote: true,
       );
 
-      if (artifactNames.every((name) {
-        final fileName = PrecompileBinaries.fileName(target, name);
-        return (release.assets ?? []).any((e) => e.name == fileName);
-      })) {
-        _log.info("All artifacts for $target already exist - skipping");
+      if (await _isReleased(release, hash, target, artifactNames)) {
+        _log.info('All artifacts for $target are released - skipping');
         continue;
       }
+      await _deleteAssets(repo, release, target, artifactNames);
 
       _log.info('Building for $target');
 
@@ -130,18 +130,30 @@ class PrecompileBinaries {
         }
 
         final data = file.readAsBytesSync();
+        final assetName = PrecompileBinaries.fileName(target, name);
         final create = CreateReleaseAsset(
-          name: PrecompileBinaries.fileName(target, name),
+          name: assetName,
           contentType: "application/octet-stream",
           assetData: data,
         );
-        final signature = sign(privateKey, data);
+        final signature = signBinary(
+          privateKey,
+          crateHash: hash,
+          fileName: assetName,
+          binary: data,
+        );
         final signatureCreate = CreateReleaseAsset(
           name: signatureFileName(target, name),
           contentType: "application/octet-stream",
           assetData: signature,
         );
-        bool verified = verify(public(privateKey), data, signature);
+        final verified = verifyBinary(
+          public(privateKey),
+          crateHash: hash,
+          fileName: assetName,
+          binary: data,
+          signature: signature,
+        );
         if (!verified) {
           throw Exception('Signature verification failed');
         }
@@ -171,6 +183,65 @@ class PrecompileBinaries {
 
     _log.info('Cleaning up');
     tempDir.deleteSync(recursive: true);
+  }
+
+  /// Whether the release has every artifact of [target] with a signature of
+  /// this key for this crate hash and file name. A file signed for another
+  /// crate hash or target, a missing signature or a broken upload makes the
+  /// target build again.
+  Future<bool> _isReleased(
+    Release release,
+    String crateHash,
+    Target target,
+    List<String> artifactNames,
+  ) async {
+    ReleaseAsset? asset(String name) =>
+        release.assets?.where((e) => e.name == name).firstOrNull;
+    for (final name in artifactNames) {
+      final fileName = PrecompileBinaries.fileName(target, name);
+      final binaryAsset = asset(fileName);
+      final signatureAsset = asset(signatureFileName(target, name));
+      if (binaryAsset == null || signatureAsset == null) return false;
+      final binary =
+          await getWithRetry(Uri.parse(binaryAsset.browserDownloadUrl!));
+      final signature =
+          await getWithRetry(Uri.parse(signatureAsset.browserDownloadUrl!));
+      if (binary.statusCode != 200 ||
+          signature.statusCode != 200 ||
+          !verifyBinary(
+            public(privateKey),
+            crateHash: crateHash,
+            fileName: fileName,
+            binary: binary.bodyBytes,
+            signature: signature.bodyBytes,
+          )) {
+        _log.info('$fileName has no valid signature - replacing it');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Deletes the artifacts of [target] and their signatures from the release,
+  /// so that the new uploads can take their names.
+  Future<void> _deleteAssets(
+    RepositoriesService repo,
+    Release release,
+    Target target,
+    List<String> artifactNames,
+  ) async {
+    final names = {
+      for (final name in artifactNames) ...[
+        PrecompileBinaries.fileName(target, name),
+        signatureFileName(target, name),
+      ],
+    };
+    for (final asset in release.assets ?? <ReleaseAsset>[]) {
+      if (names.contains(asset.name)) {
+        _log.info('Deleting asset ${asset.name}');
+        await repo.deleteReleaseAsset(repositorySlug, asset);
+      }
+    }
   }
 
   Future<Release> _getOrCreateRelease({
