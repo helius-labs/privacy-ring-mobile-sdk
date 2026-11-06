@@ -2,6 +2,12 @@
 
 Unreleased.
 
+* `close()` fails every running call with `WalletError.walletClosed`, a read
+  that finishes after it included, and ends a `prefetchProvingKeys` stream it
+  stops the same way.
+* An application's transport sends every header of a `TransportRequest` as it
+  is, the `Spr-Tee*` headers of TEE requests included.
+
 * Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
   `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
   verified by the same pinned signers. It needs `proverTeeNetwork`; a plain

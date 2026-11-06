@@ -204,8 +204,15 @@ class FakeWallet implements MobileWallet {
     return 'shielded';
   }
 
+  /// Holds [exportKeys], [activity] and [overview] until the test lets
+  /// them go.
+  Completer<void>? holdRead;
+
   @override
-  Future<WalletKeys> exportKeys() async => savedKeys;
+  Future<WalletKeys> exportKeys() async {
+    await holdRead?.future;
+    return savedKeys;
+  }
 
   @override
   Future<void> release({required PreparedTransaction pending}) async =>
@@ -250,7 +257,10 @@ class FakeWallet implements MobileWallet {
   Future<BigInt> privateBalance({String? mint}) async => BigInt.two;
 
   @override
-  Future<List<ActivityEntry>> activity() async => const [];
+  Future<List<ActivityEntry>> activity() async {
+    await holdRead?.future;
+    return const [];
+  }
 
   final lookups = <String>[];
   final lookupPrepared = <PreparedTransaction>[];
@@ -411,6 +421,7 @@ class FakeWallet implements MobileWallet {
   @override
   Future<WalletOverview> overview() async {
     events.add('overview');
+    await holdRead?.future;
     return WalletOverview(
       balances: const [],
       activity: const [],
@@ -430,6 +441,9 @@ class FakeProvingKeys implements ProvingKeys {
   final answers = <bool>[];
   Completer<void>? holdPart;
   WalletError? prefetchError;
+
+  /// What a held part fails with once let go, as a download close aborted.
+  WalletError? partError;
   bool disposed = false;
 
   static ProvingKeyProgress part(int part) => ProvingKeyProgress(
@@ -460,6 +474,7 @@ class FakeProvingKeys implements ProvingKeys {
     if (prefetchError case final error?) throw error;
     for (var index = 0; index <= 3; index++) {
       await holdPart?.future;
+      if (partError case final error?) throw error;
       final answer = await progress(part(index));
       answers.add(answer);
       if (!answer) return false;
@@ -1783,6 +1798,34 @@ void main() {
     expect(identical(wallet.close(), closed), isTrue);
   });
 
+  test('a read that finishes after close fails instead of returning', () async {
+    final reads = <String, Future<Object?> Function(SprWallet)>{
+      'balances': (wallet) => wallet.balances(),
+      'activity': (wallet) => wallet.activity(),
+      'overview': (wallet) => wallet.overview(),
+      'exportKeys': (wallet) => wallet.exportKeys(),
+    };
+    for (final MapEntry(key: name, value: read) in reads.entries) {
+      final (wallet, native, _, _) = await openWallet();
+      // A transport that does not abort on close: the read completes.
+      native
+        ..holdBalances = Completer()
+        ..holdRead = Completer();
+      final running = read(wallet);
+      await Future<void>.delayed(Duration.zero);
+      final closed = wallet.close();
+      native.holdBalances!.complete();
+      native.holdRead!.complete();
+      await expectLater(
+        running,
+        throwsWalletError(const WalletError.walletClosed()),
+        reason: name,
+      );
+      await closed;
+      expect(native.disposed, isTrue);
+    }
+  });
+
   test(
     'prefetches the keys of the shapes it is asked for, beside a spend',
     () async {
@@ -1867,6 +1910,29 @@ void main() {
       throwsWalletError(const WalletError.walletClosed()),
     );
   });
+
+  test(
+    'close ends a prefetch whose part it aborted with walletClosed',
+    () async {
+      final (wallet, native, _, _) = await openWallet();
+      native.keys
+        ..holdPart = Completer()
+        ..partError = const WalletError.provingKeyDownloadFailed(
+          name: 'transfer_confidential_1_2.key',
+        );
+      final errors = <Object>[];
+      final done = wallet
+          .prefetchProvingKeys(maxInputs: 1)
+          .handleError(errors.add)
+          .drain<void>();
+      await Future<void>.delayed(Duration.zero);
+      final closed = wallet.close();
+      native.keys.holdPart!.complete();
+      await done;
+      await closed;
+      expect(errors, [const WalletError.walletClosed()]);
+    },
+  );
 
   test('a failed prefetch ends its stream with the error', () async {
     final (wallet, native, _, _) = await openWallet();

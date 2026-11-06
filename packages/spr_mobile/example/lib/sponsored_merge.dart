@@ -390,7 +390,13 @@ class SponsoredFlow {
     state!['paymentSignature'] = base58Encode(signature);
     state!['phase'] = 'submitted';
     await _save(); // BEFORE submitting the user-signed payment.
-    final result = await wallet.submit(transaction, [signature]);
+    final String result;
+    try {
+      result = await wallet.submit(transaction, [signature]);
+    } catch (error) {
+      if (_settled(error)) await _refused();
+      rethrow;
+    }
     await _completed();
     return result;
   }
@@ -404,18 +410,42 @@ class SponsoredFlow {
     // Retry only those identical signed bytes; never refresh an unknown send.
     await _save();
     try {
-      await wallet.confirm(payment!, signature);
-    } on WalletError_TransactionOutcomeUnknown {
       try {
-        await wallet.submit(payment!, [base58Decode(signature)]);
-      } catch (_) {
-        // A replay can fail preflight after the original landed. Reconcile
-        // the original signature before drawing any conclusion from that error.
         await wallet.confirm(payment!, signature);
+      } on WalletError_TransactionOutcomeUnknown {
+        try {
+          await wallet.submit(payment!, [base58Decode(signature)]);
+        } catch (_) {
+          // A replay can fail preflight after the original landed. Reconcile
+          // the original signature before drawing any conclusion from that
+          // error.
+          await wallet.confirm(payment!, signature);
+        }
       }
+    } catch (error) {
+      if (_settled(error)) await _refused();
+      rethrow;
     }
     await _completed();
     return signature;
+  }
+
+  /// Whether [error] settles the signed payment: every wallet error but an
+  /// unknown outcome and a lock during the send, which keep the signature
+  /// for [reconcilePayment].
+  static bool _settled(Object error) =>
+      error is WalletError &&
+      error is! WalletError_TransactionOutcomeUnknown &&
+      error is! WalletError_WalletClosed;
+
+  /// The chain refused the signed payment, so it never lands: drop its
+  /// signature and return to approval, where it can be refreshed and signed
+  /// again.
+  Future<void> _refused() async {
+    final refused = {...state!, 'phase': 'approval'}
+      ..remove('paymentSignature');
+    await store.write(refused);
+    state = refused;
   }
 
   Future<void> _completed() async {
