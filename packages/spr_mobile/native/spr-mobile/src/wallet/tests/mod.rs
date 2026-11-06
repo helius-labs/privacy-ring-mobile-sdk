@@ -6,11 +6,11 @@ use super::{
         proof_widths, spend_limit, token_balance, SpendLimit, TokenBalance, UnresolvedAssets,
         WalletOverview, INDEXER_CATCH_UP,
     },
-    merge::merge_expiry,
+    merge::{merge_expiry, merge_failure},
     prepared::PreparedTransaction,
     spend::{
-        max_spend_inputs, proof_outputs, spend_failure, with_setup, within_cap, Leg,
-        MAX_COMPUTE_UNITS,
+        max_spend_inputs, private_outputs, spend_failure, spend_inputs, with_setup, within_cap,
+        Leg, MAX_COMPUTE_UNITS,
     },
     submission::reconcile,
     types::{Operation, Output, OutputOpening},
@@ -310,7 +310,7 @@ fn indexed(signature: Option<Signature>) -> serde_json::Value {
 const MINT: Pubkey = Pubkey::new_from_array([7; 32]);
 
 /// An account for `getAccountInfo`, its data in base64.
-fn account(owner: Pubkey, data: &[u8]) -> serde_json::Value {
+pub(super) fn account(owner: Pubkey, data: &[u8]) -> serde_json::Value {
     use base64::Engine;
     serde_json::json!({
         "lamports": 1_000_000,

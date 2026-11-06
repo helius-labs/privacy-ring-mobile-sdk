@@ -1,7 +1,8 @@
 //! Ordinary tree merges through the shared SDK builder.
 use super::{prepared::PreparedTransaction, types::Operation, util::nullifiers, MobileWallet};
 use crate::{asset::mint_name, error::WalletError, prover::Proving};
-use spr_client::MergeSubmission;
+use solana_pubkey::Pubkey;
+use spr_client::{ClientError, MergeSubmission};
 use spr_transaction::{
     instructions::merge::{MergeTransaction, MAX_MERGE_INPUTS, MERGE_DEFAULT_INPUT_COUNT},
     select_merge,
@@ -11,11 +12,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 impl MobileWallet {
     /// Build and prove a merge of the smallest notes of `mint` (SOL for
     /// `None`) on one tree into one: at most `max_inputs` of them, 24 when
-    /// `None`, 54 at most. Notes that prepared spends reserve are left out,
+    /// `None`, 52 at most. Notes that prepared spends reserve are left out,
     /// and the merge reserves its own. Fails with
-    /// [`WalletError::NothingToMerge`] below two notes, and with
-    /// [`WalletError::MergingDisabled`] unless [`Self::prepare_merging`] turned
-    /// merging on.
+    /// [`WalletError::NothingToMerge`] below two notes, with
+    /// [`WalletError::MergingDisabled`] for an unregistered account or until
+    /// [`Self::prepare_merging`] turned merging on, and with
+    /// [`WalletError::RegistrationConflict`] when the account's record holds
+    /// other keys.
     ///
     /// The merge needs no signature of this account: `fee_payer` pays and
     /// signs alone, this account when `None`. `proving` works as in
@@ -60,7 +63,9 @@ impl MobileWallet {
                 .ok_or(WalletError::RemoteProverMissing)?;
             submission = submission.with_prover(remote);
         }
-        let mut unsigned = submission.finish_unsigned_sync(&self.client, payer)?;
+        let mut unsigned = submission
+            .finish_unsigned_sync(&self.client, payer)
+            .map_err(|failure| merge_failure(self.owner, failure))?;
         unsigned.message = self.with_priority_fee(unsigned.message, priority_fee_lamports)?;
         let pending = self.proved(
             Operation::Merge {
@@ -70,6 +75,18 @@ impl MobileWallet {
             unsigned,
         );
         self.reserve(pending, spends)
+    }
+}
+
+/// A merge's `failure` for `owner`'s notes: a user record that holds another
+/// nullifier key is a registration conflict, whose owner the SDK's error does
+/// not name.
+pub(super) fn merge_failure(owner: Pubkey, failure: ClientError) -> WalletError {
+    match failure {
+        ClientError::MergeNullifierKeyMismatch => WalletError::RegistrationConflict {
+            owner: owner.to_string(),
+        },
+        failure => failure.into(),
     }
 }
 

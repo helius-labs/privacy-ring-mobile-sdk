@@ -24,15 +24,15 @@ pub enum WalletError {
     /// The notes that cover the amount are on `trees` trees, and a spend
     /// takes notes from at most `max_trees`. Merge first.
     TooManyInputTrees { trees: u64, max_trees: u64 },
-    /// A spend of zero.
+    /// A spend or deposit of zero.
     AmountZero,
     /// A spend with no outputs.
     NoOutputs,
     /// Fewer than two notes of `mint` (`None` for SOL) are free to merge on
     /// any one tree.
     NothingToMerge { mint: Option<String> },
-    /// This account's user record does not enable merging:
-    /// `prepare_merging(true)` turns it on.
+    /// This account has no user record, or its record does not enable
+    /// merging: register, then `prepare_merging(true)` turns it on.
     MergingDisabled,
     /// The indexer has persisted only `indexer_slot`, behind the RPC's
     /// confirmed `rpc_slot`, so the wallet's notes could include one already
@@ -163,7 +163,10 @@ impl From<ClientError> for WalletError {
             | ClientError::MergeViewingKeyMismatch { owner } => Self::RegistrationConflict {
                 owner: owner.to_string(),
             },
-            ClientError::MergeEncryptionSchemeUnsupported { .. } => Self::MergingDisabled,
+            // A merge reads the account's record: without one, or with
+            // merging off, the record does not enable merging.
+            ClientError::UserRegistryRecordNotFound { .. }
+            | ClientError::MergeEncryptionSchemeUnsupported { .. } => Self::MergingDisabled,
             ClientError::IndexerNotCaughtUp {
                 required, indexed, ..
             } => Self::IndexerBehind {
@@ -176,12 +179,10 @@ impl From<ClientError> for WalletError {
             {
                 Self::NotesAlreadySpent
             }
-            ClientError::ProofVerification(_) | ClientError::ProvingKeyMismatch { .. } => {
-                Self::ProofInvalid
-            }
-            ClientError::ProofParse(_) | ClientError::MissingProvingKeySha256 { .. } => {
-                Self::ProofMalformed
-            }
+            ClientError::ProofVerification(_) => Self::ProofInvalid,
+            ClientError::ProofParse(_)
+            | ClientError::MissingProvingKeySha256 { .. }
+            | ClientError::ProvingKeyMismatch { .. } => Self::ProofMalformed,
             failure => Self::Client {
                 message: client_message(&failure),
             },
@@ -338,6 +339,23 @@ mod tests {
             WalletError::RegistrationConflict {
                 owner: owner.to_string()
             }
+        );
+        // A merge of an account without a user record.
+        assert_eq!(
+            WalletError::from(ClientError::UserRegistryRecordNotFound {
+                owner,
+                record: solana_address::Address::new_unique(),
+            }),
+            WalletError::MergingDisabled
+        );
+        // A remote proof made with another proving key than the pinned one.
+        assert_eq!(
+            WalletError::from(ClientError::ProvingKeyMismatch {
+                key: "transfer_confidential_2_2.key".into(),
+                expected: "07".repeat(32),
+                reported: "08".repeat(32),
+            }),
+            WalletError::ProofMalformed
         );
         assert_eq!(
             WalletError::from(TransactionError::NothingToMerge {

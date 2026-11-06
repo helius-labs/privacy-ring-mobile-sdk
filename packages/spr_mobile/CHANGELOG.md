@@ -2,6 +2,15 @@
 
 Unreleased.
 
+* A spend whose notes add up to its amount exactly proves without a change
+  output, as the Rust and TypeScript SDKs do: sending a whole balance with a
+  fee takes up to 40 notes, and 16 private outputs up to 8. A deposit of zero
+  fails with `WalletError.amountZero`, and a deposit's note carries the
+  signing key's tag. A merge of an unregistered account fails with
+  `WalletError.mergingDisabled`, one against a record with another nullifier
+  key with `WalletError.registrationConflict`, and a remote proof that names
+  another proving key with `WalletError.proofMalformed`.
+
 * Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
   `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
   verified by the same pinned signers. It needs `proverTeeNetwork`; a plain
@@ -119,8 +128,8 @@ Unreleased.
   the amount is in; `reserved`, what this wallet's prepared spends hold; and
   `limits`, the most one spend of 2, 4, 8 or 16 outputs can take now without
   a merge, from the unreserved notes within the width's note cap and two
-  trees. A spend with `k` private outputs uses `k + 1` outputs, public
-  outputs take no slot.
+  trees. A spend with `k` private outputs uses `k` outputs, and one more
+  for change; public outputs take no slot.
 * `WalletConfig.reuseNotesMs` lets a spend take its notes from a read made
   within that window instead of reading the indexer again; a send or a
   confirmation ends the reuse. A spend's other lookups, the recipient's
