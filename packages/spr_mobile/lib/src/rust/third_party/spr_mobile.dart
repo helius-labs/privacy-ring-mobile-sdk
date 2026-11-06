@@ -165,7 +165,8 @@ abstract class MobileWallet implements RustOpaqueInterface {
   });
 
   /// Deposit public SOL (`mint` `None`) or tokens from this account into
-  /// its own private balance. Deposits carry no proof.
+  /// its own private balance. Deposits carry no proof. A deposit of zero
+  /// fails with [`WalletError::AmountZero`] before the network.
   ///
   /// The first deposit of a mint into the pool creates the mint's registry
   /// entry and vault in the same transaction, signed and paid for by this
@@ -182,11 +183,13 @@ abstract class MobileWallet implements RustOpaqueInterface {
 
   /// Build and prove a merge of the smallest notes of `mint` (SOL for
   /// `None`) on one tree into one: at most `max_inputs` of them, 24 when
-  /// `None`, 54 at most. Notes that prepared spends reserve are left out,
+  /// `None`, 52 at most. Notes that prepared spends reserve are left out,
   /// and the merge reserves its own. Fails with
-  /// [`WalletError::NothingToMerge`] below two notes, and with
-  /// [`WalletError::MergingDisabled`] unless [`Self::prepare_merging`] turned
-  /// merging on.
+  /// [`WalletError::NothingToMerge`] below two notes, with
+  /// [`WalletError::MergingDisabled`] for an unregistered account or until
+  /// [`Self::prepare_merging`] turned merging on, and with
+  /// [`WalletError::RegistrationConflict`] when the account's record holds
+  /// other keys.
   ///
   /// The merge needs no signature of this account: `fee_payer` pays and
   /// signs alone, this account when `None`. `proving` works as in
@@ -243,11 +246,15 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// the spend, the fee payer pays its rent, and
   /// [`Operation::Spend`]'s `created_token_accounts` names the recipient.
   ///
-  /// The private outputs and the change take the proof's output slots,
-  /// public outputs none: a spend with `k` private outputs proves with
+  /// Each private output takes one of the proof's output slots, the change
+  /// one more when the selected notes hold more than the amount, and public
+  /// outputs none. A spend with `k` private outputs and change proves with
   /// `k + 1` outputs, whose keys take at most 40 notes for `k <= 1`, 24
-  /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`, within
-  /// [`WalletConfig::max_spend_inputs`]; past that it fails with
+  /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`; one whose notes
+  /// add up to the amount exactly, such as a spend of the whole balance,
+  /// proves with `k` outputs and takes at most 40 notes for `k <= 2`, 24
+  /// for `k <= 4`, 16 for `k <= 8` and 8 for `k <= 16`. Both stay within
+  /// [`WalletConfig::max_spend_inputs`]; past that the spend fails with
   /// [`WalletError::MergeRequired`]. [`TokenBalance::limits`] says what
   /// each width can take now.
   ///
@@ -1027,7 +1034,10 @@ class TokenBalance {
   /// `k + 1` outputs, its change included, and public outputs take no
   /// slot: a withdrawal, a withdrawal with one private fee, or a send to
   /// one wallet reads the entry with `outputs: 2`, a send to one wallet
-  /// with a fee the entry with `outputs: 4`. The limits include any
+  /// with a fee the entry with `outputs: 4`. A spend of an entry's whole
+  /// amount leaves no change, so it takes up to that entry's `outputs`
+  /// private outputs: a send of all of the `outputs: 2` entry to one
+  /// wallet with a fee proves on two outputs. The limits include any
   /// application fee the spend pays.
   final List<SpendLimit> limits;
 
@@ -1455,7 +1465,7 @@ sealed class WalletError with _$WalletError implements FrbException {
     required BigInt maxTrees,
   }) = WalletError_TooManyInputTrees;
 
-  /// A spend of zero.
+  /// A spend or deposit of zero.
   const factory WalletError.amountZero() = WalletError_AmountZero;
 
   /// A spend with no outputs.
@@ -1466,8 +1476,8 @@ sealed class WalletError with _$WalletError implements FrbException {
   const factory WalletError.nothingToMerge({String? mint}) =
       WalletError_NothingToMerge;
 
-  /// This account's user record does not enable merging:
-  /// `prepare_merging(true)` turns it on.
+  /// This account has no user record, or its record does not enable
+  /// merging: register, then `prepare_merging(true)` turns it on.
   const factory WalletError.mergingDisabled() = WalletError_MergingDisabled;
 
   /// The indexer has persisted only `indexer_slot`, behind the RPC's

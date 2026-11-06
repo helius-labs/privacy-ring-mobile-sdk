@@ -27,6 +27,29 @@ fn a_deposit_is_one_instruction_this_account_signs() {
     assert_eq!(pending.message.instructions().len(), 1);
     assert_eq!(pending.signers(), [signer.pubkey().to_string()]);
     assert_eq!(pending.last_valid_block_height(), 9);
+    // The note carries the signing key's tag, as every note the wallet
+    // receives does, not the viewing key's.
+    let data = &pending.message.instructions()[0].data;
+    let carries = |tag: [u8; 32]| data.windows(32).any(|window| window == tag);
+    assert!(carries(wallet.address.confidential_view_tag().unwrap()));
+    assert!(!carries(wallet.address.viewing_pubkey.u()));
+}
+
+/// A deposit of zero fails before the network, as a spend of zero does.
+#[test]
+fn a_deposit_of_zero_fails_before_the_network() {
+    let signer = Keypair::new();
+    let (mut wallet, asked) = rpc_wallet(
+        &signer,
+        |_| serde_json::json!({"error": {"code": -32603, "message": "unexpected"}}),
+    );
+    for mint in [None, Some(MINT.to_string())] {
+        assert_eq!(
+            wallet.prepare_deposit(mint, 0, None).err(),
+            Some(WalletError::AmountZero)
+        );
+    }
+    assert!(asked.lock().unwrap().is_empty());
 }
 
 /// The first deposit of a mint the pool has not registered creates its

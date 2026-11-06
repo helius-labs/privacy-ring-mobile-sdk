@@ -6885,7 +6885,8 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   );
 
   /// Deposit public SOL (`mint` `None`) or tokens from this account into
-  /// its own private balance. Deposits carry no proof.
+  /// its own private balance. Deposits carry no proof. A deposit of zero
+  /// fails with [`WalletError::AmountZero`] before the network.
   ///
   /// The first deposit of a mint into the pool creates the mint's registry
   /// entry and vault in the same transaction, signed and paid for by this
@@ -6907,11 +6908,13 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
 
   /// Build and prove a merge of the smallest notes of `mint` (SOL for
   /// `None`) on one tree into one: at most `max_inputs` of them, 24 when
-  /// `None`, 54 at most. Notes that prepared spends reserve are left out,
+  /// `None`, 52 at most. Notes that prepared spends reserve are left out,
   /// and the merge reserves its own. Fails with
-  /// [`WalletError::NothingToMerge`] below two notes, and with
-  /// [`WalletError::MergingDisabled`] unless [`Self::prepare_merging`] turned
-  /// merging on.
+  /// [`WalletError::NothingToMerge`] below two notes, with
+  /// [`WalletError::MergingDisabled`] for an unregistered account or until
+  /// [`Self::prepare_merging`] turned merging on, and with
+  /// [`WalletError::RegistrationConflict`] when the account's record holds
+  /// other keys.
   ///
   /// The merge needs no signature of this account: `fee_payer` pays and
   /// signs alone, this account when `None`. `proving` works as in
@@ -6983,11 +6986,15 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   /// the spend, the fee payer pays its rent, and
   /// [`Operation::Spend`]'s `created_token_accounts` names the recipient.
   ///
-  /// The private outputs and the change take the proof's output slots,
-  /// public outputs none: a spend with `k` private outputs proves with
+  /// Each private output takes one of the proof's output slots, the change
+  /// one more when the selected notes hold more than the amount, and public
+  /// outputs none. A spend with `k` private outputs and change proves with
   /// `k + 1` outputs, whose keys take at most 40 notes for `k <= 1`, 24
-  /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`, within
-  /// [`WalletConfig::max_spend_inputs`]; past that it fails with
+  /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`; one whose notes
+  /// add up to the amount exactly, such as a spend of the whole balance,
+  /// proves with `k` outputs and takes at most 40 notes for `k <= 2`, 24
+  /// for `k <= 4`, 16 for `k <= 8` and 8 for `k <= 16`. Both stay within
+  /// [`WalletConfig::max_spend_inputs`]; past that the spend fails with
   /// [`WalletError::MergeRequired`]. [`TokenBalance::limits`] says what
   /// each width can take now.
   ///

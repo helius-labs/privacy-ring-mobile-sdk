@@ -1,10 +1,10 @@
 //! Cache-targeted merges and authenticated restart state. The cache is an
 //! acceleration path: the same merge output is also published to the tree.
 use super::{
-    merge::merge_expiry,
+    merge::{merge_expiry, merge_failure},
     notes::{merge_input_ids, select_merge_inputs, MAX_CACHED_MERGE_INPUTS},
     prepared::PreparedTransaction,
-    spend::{max_spend_inputs, within_cap},
+    spend::within_spend_cap,
     types::{Operation, Output},
     util::{invalid, nullifiers, parse_pubkey},
     MobileWallet,
@@ -169,12 +169,8 @@ impl MobileWallet {
         let payer = parse_pubkey(&target.sponsor)?;
         let record = fetch_user_record_optional_checked(&self.client, self.owner)?
             .ok_or(WalletError::MergingDisabled)?;
-        check_merge_record(&record, self.owner, &self.address).map_err(|error| match error {
-            ClientError::MergeNullifierKeyMismatch => WalletError::RegistrationConflict {
-                owner: self.owner.to_string(),
-            },
-            error => error.into(),
-        })?;
+        check_merge_record(&record, self.owner, &self.address)
+            .map_err(|failure| merge_failure(self.owner, failure))?;
         let reserved = self.reserved()?;
         let notes = self.recent_notes()?;
         let inputs = match ids {
@@ -323,7 +319,7 @@ impl MobileWallet {
         cached: &[CachedOutput],
         asset: Asset,
         amount: u64,
-        outputs: usize,
+        private: usize,
     ) -> Result<Vec<WalletUtxo>, WalletError> {
         self.verify_cached_outputs(cached.to_vec())?;
         let mut ordered = cached.to_vec();
@@ -356,11 +352,7 @@ impl MobileWallet {
                 available: total,
             });
         }
-        within_cap(
-            notes,
-            amount,
-            self.max_spend_inputs.min(max_spend_inputs(outputs)),
-        )
+        within_spend_cap(notes, amount, private, self.max_spend_inputs)
     }
 
     pub(super) fn cached_note(&self, output: &CachedOutput) -> Result<WalletUtxo, WalletError> {

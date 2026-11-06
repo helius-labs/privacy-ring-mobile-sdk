@@ -1,6 +1,6 @@
 use super::*;
 use crate::wallet::prepared::Envelope;
-use crate::wallet::tests::{open, unsigned};
+use crate::wallet::tests::{account, open, rpc_wallet, unsigned};
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use std::sync::{Arc, Mutex};
@@ -209,4 +209,60 @@ fn snapshots_preserve_cache_prediction_and_run_terms() {
         .restore_prepared_transaction(wallet.export_prepared_transaction(&pending).unwrap())
         .is_err());
     assert!(reopened.reservations().reserved.is_empty());
+}
+
+/// A cached merge reads the account's record first: none, or one with
+/// merging off, is `MergingDisabled`; one with other keys a conflict.
+#[test]
+fn a_cached_merge_needs_a_record_that_enables_merging_with_these_keys() {
+    use spr_user_registry_interface::{
+        user_registry_program_id, MergeEncryptionScheme, UserRecord,
+    };
+
+    let signer = Keypair::new();
+    let address = open(&signer).unwrap().address;
+    let record = |scheme: MergeEncryptionScheme, flipped: Option<usize>| {
+        // UserRecord's discriminator, owner, bump, keys and scheme.
+        let mut data = vec![UserRecord::DISCRIMINATOR];
+        data.extend_from_slice(signer.pubkey().as_ref());
+        data.push(user_record_pda(&signer.pubkey()).1);
+        let mut keys = address.nullifier_pubkey.to_vec();
+        keys.extend_from_slice(address.viewing_pubkey.as_bytes());
+        if let Some(index) = flipped {
+            keys[index] ^= 1;
+        }
+        data.extend_from_slice(&keys);
+        data.push(scheme as u8);
+        account(user_registry_program_id(), &data)
+    };
+    let conflict = WalletError::RegistrationConflict {
+        owner: signer.pubkey().to_string(),
+    };
+    for (record, failure) in [
+        (serde_json::Value::Null, WalletError::MergingDisabled),
+        (
+            record(MergeEncryptionScheme::Disabled, None),
+            WalletError::MergingDisabled,
+        ),
+        (
+            record(MergeEncryptionScheme::PoseidonCtrV1, Some(0)),
+            conflict.clone(),
+        ),
+        (
+            record(MergeEncryptionScheme::PoseidonCtrV1, Some(32)),
+            conflict.clone(),
+        ),
+    ] {
+        let (mut wallet, asked) = rpc_wallet(&signer, move |method| {
+            assert_eq!(method, "getAccountInfo");
+            serde_json::json!({"result": {"context": {"slot": 1}, "value": record}})
+        });
+        assert_eq!(
+            wallet
+                .prepare_cached_merge(target(), None, None, None, None, None)
+                .err(),
+            Some(failure)
+        );
+        assert_eq!(*asked.lock().unwrap(), ["getAccountInfo"]);
+    }
 }

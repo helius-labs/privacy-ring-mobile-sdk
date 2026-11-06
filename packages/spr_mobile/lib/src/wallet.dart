@@ -256,7 +256,10 @@ class SprWallet {
   /// its change included, and public outputs take no slot: a withdrawal, a
   /// withdrawal with one private fee, or a send to one wallet reads the entry
   /// with `outputs: 2`, a send to one wallet with a fee the entry with
-  /// `outputs: 4`. The limits include any application fee the spend pays.
+  /// `outputs: 4`. A spend of an entry's whole amount leaves no change, so it
+  /// takes up to that entry's `outputs` private outputs: a send of all of the
+  /// `outputs: 2` entry to one wallet with a fee proves on two outputs. The
+  /// limits include any application fee the spend pays.
   Future<List<native.TokenBalance>> balances() => _serial(_wallet.balances);
 
   /// Read unreserved, nonzero default-ring notes from the indexer now.
@@ -371,8 +374,11 @@ class SprWallet {
   /// 40 notes, so merge when it fails with [WalletError.mergeRequired] or
   /// [WalletError.tooManyInputTrees], then prepare it again. Notes that
   /// prepared spends reserve are left out, and the merge reserves its own.
-  /// Fails with [WalletError.nothingToMerge] below two notes, and with
-  /// [WalletError.mergingDisabled] until [prepareMerging] turned merging on.
+  /// Fails with [WalletError.nothingToMerge] below two notes, with
+  /// [WalletError.mergingDisabled] for an unregistered account or until
+  /// [prepareMerging] turned merging on, and with
+  /// [WalletError.registrationConflict] when the account's record holds other
+  /// keys.
   ///
   /// A merge needs no signature of this account: [feePayer] (this account
   /// when null) pays and signs alone. [proving] works as in
@@ -450,7 +456,8 @@ class SprWallet {
   /// the approval screen. A pool whose protocol config lets only its
   /// authority do that fails with [WalletError.assetNotSupported] before
   /// anything is built. Two first deposits of one mint prepared at the same
-  /// time both create them, so the second to land fails.
+  /// time both create them, so the second to land fails. A deposit of zero
+  /// fails with [WalletError.amountZero] before anything is asked.
   Future<PreparedTransaction> prepareDeposit(
     BigInt amount, {
     String? mint,
@@ -484,10 +491,13 @@ class SprWallet {
   /// recipient without an associated token account gets one: the transaction
   /// creates it ahead of the spend, the fee payer pays its rent, and
   /// [native.Operation_Spend.createdTokenAccounts] names the recipient. A
-  /// spend with `k` private outputs proves with
-  /// `k + 1` outputs, its change included, and public outputs take no slot,
-  /// so it takes at most 40 notes for `k <= 1`, 24 for `k <= 3`, 16 for
-  /// `k <= 7` and 8 for `k <= 15`, within `WalletConfig.maxSpendInputs`.
+  /// spend with `k` private outputs and change proves with `k + 1` outputs,
+  /// and public outputs take no slot, so it takes at most 40 notes for
+  /// `k <= 1`, 24 for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`. One whose
+  /// notes add up to the amount exactly, such as a spend of the whole
+  /// balance, has no change and proves with `k` outputs: at most 40 notes for
+  /// `k <= 2`, 24 for `k <= 4`, 16 for `k <= 8` and 8 for `k <= 16`. Both stay
+  /// within `WalletConfig.maxSpendInputs`.
   /// Past that it fails with [WalletError.mergeRequired], and with
   /// [WalletError.tooManyInputTrees] when the notes are on more than two
   /// trees; [native.TokenBalance.limits] says what each width can take now.
