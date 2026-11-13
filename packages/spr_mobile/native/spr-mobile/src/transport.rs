@@ -793,8 +793,8 @@ mod proxy_tests {
     #[test]
     fn a_missing_policy_fails_before_any_http() {
         for url in [
-            "https://dd73hh473h6ha.cloudfront.net",
-            "https://d3ky2kt0ntqxt1.cloudfront.net",
+            "https://devnet.helius-rpc.com/v1/spr?api-key=secret",
+            "https://mainnet.helius-rpc.com/v1/spr?api-key=secret",
             "https://api.example/v1/spr?api-key=secret",
             "https://proxy.example/zolana",
             "http://localhost:1234/v1/spr",

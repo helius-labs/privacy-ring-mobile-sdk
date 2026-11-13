@@ -23,7 +23,7 @@
 //! ```
 //!
 //! The remote proof comes from the prover at `ZOLANA_E2E_PROVER_URL`, such as
-//! devnet-e's attested prover (`https://dd73hh473h6ha.cloudfront.net`),
+//! devnet-e's attested prover (`https://devnet.helius-rpc.com/v1/spr?api-key=...`),
 //! asked through the test's transport. For remote URLs, set
 //! `ZOLANA_E2E_TEE_POLICY` to the path of a reviewed policy JSON file, or
 //! `ZOLANA_E2E_TEE_NETWORK` (`mainnet` or `devnet`) for the signed policy the

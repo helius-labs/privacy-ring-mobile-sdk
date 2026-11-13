@@ -8,7 +8,7 @@ environment:
   flutter: '>=3.3.0'
 
 dependencies:
-  code_assets: ^2.1.0
+  code_assets: ^2.2.0
   flutter:
     sdk: flutter
   flutter_rust_bridge: 2.11.1

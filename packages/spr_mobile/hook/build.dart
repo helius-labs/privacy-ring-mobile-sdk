@@ -73,7 +73,7 @@ void main(List<String> args) async {
       'clang',
       '-dynamiclib',
       '-target',
-      '$arch-apple-ios${ios.targetVersion}.0${simulator ? '-simulator' : ''}',
+      '$arch-apple-ios${ios.deploymentVersion.major}.0${simulator ? '-simulator' : ''}',
       '-install_name',
       '@rpath/lib$_library.dylib',
       '-Wl,-force_load,${staticDir.resolve('lib$_library.a').toFilePath()}',
