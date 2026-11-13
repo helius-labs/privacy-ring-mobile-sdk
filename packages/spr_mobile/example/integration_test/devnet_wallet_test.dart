@@ -37,9 +37,8 @@ const _enabled = bool.fromEnvironment('ZOLANA_E2E');
 const _apiKey = String.fromEnvironment('ZOLANA_API_KEY');
 const _proverUrl = String.fromEnvironment('ZOLANA_E2E_PROVER_URL');
 
-/// devnet-e's attested prover, directly until the Helius gateway serves
-/// devnet-e.
-const _deploymentProver = 'https://dd73hh473h6ha.cloudfront.net';
+/// devnet-e's attested prover through the Helius gateway.
+const _deploymentProver = 'https://devnet.helius-rpc.com/v1/spr?api-key=$_apiKey';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

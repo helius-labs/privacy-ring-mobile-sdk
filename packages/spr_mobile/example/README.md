@@ -11,10 +11,10 @@ public SOL pays network fees. Close the sheet to refresh balances and history,
 then retry the payment. Repeat merges if needed. Turn **Allow merges** off to
 opt out on chain. Merges appear in history as self transfers.
 
-Build the wallet with `--dart-define=ZOLANA_API_KEY=...` for the devnet RPC,
-or supply a Solana devnet RPC with `--dart-define=ZOLANA_RPC_URL=...`.
-The Network menu includes the TEE prover URL, which defaults to
-`https://dd73hh473h6ha.cloudfront.net`. Transfers continue using local proving;
+Build the wallet with `--dart-define=ZOLANA_API_KEY=...`, a Helius key for the
+devnet RPC, indexer and prover; `--dart-define=ZOLANA_RPC_URL=...` supplies
+another Solana devnet RPC. The Network menu includes the TEE prover URL, which
+defaults to `https://devnet.helius-rpc.com/v1/spr`. Transfers continue using local proving;
 only the merge action requests `Proving.remote`.
 
 The **Proof benchmark** screen also generates and verifies a Groth16 proof on the device with zopro, from

@@ -34,15 +34,14 @@ class Network {
   final String indexerUrl;
   final String proverUrl;
 
-  /// Zolana's devnet-e deployment: Solana RPC through Helius, keyed by the
-  /// Helius key from `--dart-define=ZOLANA_API_KEY=...`, and the deployment's
-  /// indexer, directly until the Helius gateway serves devnet-e.
+  /// Zolana's devnet-e deployment: Solana RPC, the indexer and the prover
+  /// through Helius, keyed by `--dart-define=ZOLANA_API_KEY=...`.
   static const devnet = Network(
     _rpcUrl == ''
         ? 'https://beta-devnet.helius-rpc.com/?api-key=$_apiKey'
         : _rpcUrl,
-    'https://d34xe1hqb2ibg2.cloudfront.net',
-    'https://dd73hh473h6ha.cloudfront.net',
+    'https://devnet.helius-rpc.com/v1/spr?api-key=$_apiKey',
+    'https://devnet.helius-rpc.com/v1/spr?api-key=$_apiKey',
   );
 }
 
@@ -106,10 +105,8 @@ class _WalletScreenState extends State<WalletScreen> {
     try {
       // Release the previous account before this one proves.
       await previous?.close();
-      if (identical(_network, Network.devnet) &&
-          _apiKey.isEmpty &&
-          _rpcUrl.isEmpty) {
-        throw 'Set ZOLANA_RPC_URL or ZOLANA_API_KEY for Solana devnet.';
+      if (identical(_network, Network.devnet) && _apiKey.isEmpty) {
+        throw 'Set ZOLANA_API_KEY for devnet.';
       }
       final signer = await DemoSigner.fromSeedHex(
         _account.seedHex,

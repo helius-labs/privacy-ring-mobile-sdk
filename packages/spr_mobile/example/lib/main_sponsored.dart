@@ -17,9 +17,10 @@ const _backendUrl = String.fromEnvironment(
 );
 const _auth = String.fromEnvironment('ZOLANA_BACKEND_AUTH');
 const _rpc = String.fromEnvironment('ZOLANA_RPC_URL');
+const _apiKey = String.fromEnvironment('ZOLANA_API_KEY');
 const _indexer = String.fromEnvironment(
   'ZOLANA_INDEXER_URL',
-  defaultValue: 'https://d34xe1hqb2ibg2.cloudfront.net',
+  defaultValue: 'https://devnet.helius-rpc.com/v1/spr?api-key=$_apiKey',
 );
 const _syncOnly = bool.fromEnvironment('ZOLANA_PROVER_SYNC_ONLY');
 const _mint = String.fromEnvironment('ZOLANA_MINT');

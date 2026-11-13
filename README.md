@@ -62,9 +62,9 @@ flutter test integration_test/devnet_wallet_test.dart -d DEVICE \
   --dart-define=ZOLANA_E2E=true --dart-define=ZOLANA_API_KEY=...
 ```
 
-`ZOLANA_API_KEY` is a Helius key: the example reaches Solana devnet RPC through
-Helius with it, and Zolana's devnet-e indexer and prover without it. It is
-compiled into that build only; do not commit it.
+`ZOLANA_API_KEY` is a Helius key: the example reaches Solana devnet RPC and
+the devnet-e indexer and prover through Helius with it. It is compiled into
+that build only; do not commit it.
 
 The build uses the precompiled native libraries (see below). When no release
 matches the sources, it builds them from source with Rust. Android source builds need the NDK version Flutter selects (28.2.13676358
@@ -160,8 +160,8 @@ pool:
 
 ```sh
 ZOLANA_E2E_RPC_URL="https://beta-devnet.helius-rpc.com/?api-key=$API_KEY" \
-ZOLANA_E2E_INDEXER_URL="https://d34xe1hqb2ibg2.cloudfront.net" \
-ZOLANA_E2E_PROVER_URL="https://dd73hh473h6ha.cloudfront.net" \
+ZOLANA_E2E_INDEXER_URL="https://devnet.helius-rpc.com/v1/spr?api-key=$API_KEY" \
+ZOLANA_E2E_PROVER_URL="https://devnet.helius-rpc.com/v1/spr?api-key=$API_KEY" \
 ZOLANA_E2E_TEE_NETWORK=devnet \
 ZOLANA_E2E_SENDER_SEED=a0a60f24c56c18101be405cc2ddb750d88961c1ee781bd17cd174fe1f5ff55dd \
 ZOLANA_E2E_RECIPIENT_SEED=7138835c906af341f4eec548684b5204d5b617b19573a0dd758050982601bb67 \
