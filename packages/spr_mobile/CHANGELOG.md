@@ -49,8 +49,9 @@ Unreleased.
   `Deployment.devnet()` (devnet-e) and `Deployment.mainnet()` with their Photon,
   Nitro and trusted attestation policies. Select the matching policy for each
   public prover origin; explicit application policies take precedence.
-* Version prepared snapshots for the new program; earlier snapshots are
-  rejected.
+* `exportPreparedTransaction` saves a prepared transaction as a versioned
+  snapshot authenticated with the wallet's keys; `restorePreparedTransaction`
+  restores it.
 
 * Add `prepareRegistration(enableMerging: true)` to register and select
   `PoseidonCtrV1` in the same message. The default remains register-only.
@@ -72,8 +73,7 @@ Unreleased.
 
 * Fix historical transaction recovery in `waitForTransaction`, `confirm` and
   lost-send handling: search RPC history and accept matching indexed events.
-  Missing history remains `transactionOutcomeUnknown` after blockhash expiry;
-  the SDK no longer reports it as `transactionExpired`.
+  Missing history after blockhash expiry returns `transactionOutcomeUnknown`.
 
 * `SprWallet.transaction(signature)` fetches and decrypts one signature
   without history pagination. Its result distinguishes ready (possibly empty),

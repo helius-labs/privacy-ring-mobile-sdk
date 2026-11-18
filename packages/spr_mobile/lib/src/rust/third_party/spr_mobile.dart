@@ -1555,16 +1555,6 @@ sealed class WalletError with _$WalletError implements FrbException {
     required BigInt got,
   }) = WalletError_SignatureCountMismatch;
 
-  /// Solana did not confirm the transaction within the wait.
-  const factory WalletError.transactionNotConfirmed({
-    required String signature,
-  }) = WalletError_TransactionNotConfirmed;
-
-  /// Retained for compatibility with older SDK versions. Missing history
-  /// after blockhash expiry now returns `TransactionOutcomeUnknown`.
-  const factory WalletError.transactionExpired({required String signature}) =
-      WalletError_TransactionExpired;
-
   /// RPC history and the indexer could not establish a confirmed outcome.
   /// Keep the signature and check with `wait_for_transaction` again. An
   /// expired blockhash does not prove that the payment never succeeded.

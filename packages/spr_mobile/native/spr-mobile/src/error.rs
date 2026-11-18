@@ -81,11 +81,6 @@ pub enum WalletError {
     SignatureInvalid,
     /// `submit` received `got` signatures for `expected` signers.
     SignatureCountMismatch { expected: u64, got: u64 },
-    /// Solana did not confirm the transaction within the wait.
-    TransactionNotConfirmed { signature: String },
-    /// Retained for compatibility with older SDK versions. Missing history
-    /// after blockhash expiry now returns `TransactionOutcomeUnknown`.
-    TransactionExpired { signature: String },
     /// RPC history and the indexer could not establish a confirmed outcome.
     /// Keep the signature and check with `wait_for_transaction` again. An
     /// expired blockhash does not prove that the payment never succeeded.

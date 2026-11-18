@@ -10,22 +10,11 @@ The proxy does not schedule background merges or hold the user's nullifier key.
 The relayer's run API and the proof proxy are separate interfaces, even though
 this example hosts them in one process.
 
-## Versions
-
 Build the app and server from the same mobile SDK checkout, including its two
 Cargo lockfiles, generated bridge and `native/spr-mobile/zopro-keys.lock`.
 Both use Zolana commit **c5297afa13e8bfb6edadf6408304ef3fc2f8c676**.
-These additions are unreleased; the older mobile pin e30b328a does not expose them.
-Use the eventual reviewed mobile commit containing this example as the client
-pin; the upstream protocol revision alone is not a mobile SDK release.
-
-The v0.4 sponsored contract must be adapted to the v0.6 transaction/account
-layout and cache routes. Do not mix its messages, saved runs or proving artifacts
-with this example. Finish or reconcile outstanding runs before changing versions.
-Wallet snapshots are versioned and authenticated, not a cross-version migration
-format. Rebuild the native library with the Dart bindings. Proving-key hashes
-are pinned by the lockfile; remote proofs are also checked against the pinned
-key hash and verified locally.
+The lockfile pins the proving-key hashes; remote proofs are also checked against
+the pinned key hash and verified locally.
 
 ## Run the backend
 

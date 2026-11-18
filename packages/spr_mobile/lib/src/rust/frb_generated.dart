@@ -3667,87 +3667,79 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           got: dco_decode_u_64(raw[2]),
         );
       case 23:
-        return WalletError_TransactionNotConfirmed(
-          signature: dco_decode_String(raw[1]),
-        );
-      case 24:
-        return WalletError_TransactionExpired(
-          signature: dco_decode_String(raw[1]),
-        );
-      case 25:
         return WalletError_TransactionOutcomeUnknown(
           signature: dco_decode_String(raw[1]),
           message: dco_decode_String(raw[2]),
         );
-      case 26:
+      case 24:
         return WalletError_RemoteProverMissing();
-      case 27:
+      case 25:
         return WalletError_ProverPolicyMissing();
-      case 28:
+      case 26:
         return WalletError_ProofMalformed();
-      case 29:
+      case 27:
         return WalletError_ProofInvalid();
-      case 30:
+      case 28:
         return WalletError_ProofFailed();
-      case 31:
+      case 29:
         return WalletError_ProverBusy();
-      case 32:
+      case 30:
         return WalletError_ProverClosed();
-      case 33:
+      case 31:
         return WalletError_ProverUnavailable();
-      case 34:
+      case 32:
         return WalletError_ProverLoadFailed();
-      case 35:
+      case 33:
         return WalletError_UnsupportedCircuit();
-      case 36:
+      case 34:
         return WalletError_RpcUrlInsecure(url: dco_decode_String(raw[1]));
-      case 37:
+      case 35:
         return WalletError_IndexerUrlInsecure(url: dco_decode_String(raw[1]));
-      case 38:
+      case 36:
         return WalletError_ProvingKeyUrlInsecure(
           url: dco_decode_String(raw[1]),
         );
-      case 39:
+      case 37:
         return WalletError_ProverUrlInsecure(url: dco_decode_String(raw[1]));
-      case 40:
+      case 38:
         return WalletError_ProvingKeyUnknown(name: dco_decode_String(raw[1]));
-      case 41:
+      case 39:
         return WalletError_ProvingKeyCatalogInvalid();
-      case 42:
+      case 40:
         return WalletError_ProvingKeyMismatch(name: dco_decode_String(raw[1]));
-      case 43:
+      case 41:
         return WalletError_ProvingKeyDownloadFailed(
           name: dco_decode_String(raw[1]),
         );
-      case 44:
+      case 42:
         return WalletError_ProvingKeyCorrupt(name: dco_decode_String(raw[1]));
-      case 45:
+      case 43:
         return WalletError_ProvingKeyStoreFailed(
           path: dco_decode_String(raw[1]),
         );
-      case 46:
+      case 44:
         return WalletError_PoseidonInputCountInvalid(
           count: dco_decode_u_64(raw[1]),
         );
-      case 47:
+      case 45:
         return WalletError_PoseidonInputLengthInvalid(
           index: dco_decode_u_64(raw[1]),
           length: dco_decode_u_64(raw[2]),
         );
-      case 48:
+      case 46:
         return WalletError_SignerMissing();
-      case 49:
+      case 47:
         return WalletError_SignerMismatch(
           wallet: dco_decode_String(raw[1]),
           signer: dco_decode_String(raw[2]),
         );
-      case 50:
+      case 48:
         return WalletError_UnexpectedSigners(
           signers: dco_decode_list_String(raw[1]),
         );
-      case 51:
+      case 49:
         return WalletError_WalletClosed();
-      case 52:
+      case 50:
         return WalletError_Client(message: dco_decode_String(raw[1]));
       default:
         throw Exception("unreachable");
@@ -5144,91 +5136,85 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         );
       case 23:
         var var_signature = sse_decode_String(deserializer);
-        return WalletError_TransactionNotConfirmed(signature: var_signature);
-      case 24:
-        var var_signature = sse_decode_String(deserializer);
-        return WalletError_TransactionExpired(signature: var_signature);
-      case 25:
-        var var_signature = sse_decode_String(deserializer);
         var var_message = sse_decode_String(deserializer);
         return WalletError_TransactionOutcomeUnknown(
           signature: var_signature,
           message: var_message,
         );
-      case 26:
+      case 24:
         return WalletError_RemoteProverMissing();
-      case 27:
+      case 25:
         return WalletError_ProverPolicyMissing();
-      case 28:
+      case 26:
         return WalletError_ProofMalformed();
-      case 29:
+      case 27:
         return WalletError_ProofInvalid();
-      case 30:
+      case 28:
         return WalletError_ProofFailed();
-      case 31:
+      case 29:
         return WalletError_ProverBusy();
-      case 32:
+      case 30:
         return WalletError_ProverClosed();
-      case 33:
+      case 31:
         return WalletError_ProverUnavailable();
-      case 34:
+      case 32:
         return WalletError_ProverLoadFailed();
-      case 35:
+      case 33:
         return WalletError_UnsupportedCircuit();
-      case 36:
+      case 34:
         var var_url = sse_decode_String(deserializer);
         return WalletError_RpcUrlInsecure(url: var_url);
-      case 37:
+      case 35:
         var var_url = sse_decode_String(deserializer);
         return WalletError_IndexerUrlInsecure(url: var_url);
-      case 38:
+      case 36:
         var var_url = sse_decode_String(deserializer);
         return WalletError_ProvingKeyUrlInsecure(url: var_url);
-      case 39:
+      case 37:
         var var_url = sse_decode_String(deserializer);
         return WalletError_ProverUrlInsecure(url: var_url);
-      case 40:
+      case 38:
         var var_name = sse_decode_String(deserializer);
         return WalletError_ProvingKeyUnknown(name: var_name);
-      case 41:
+      case 39:
         return WalletError_ProvingKeyCatalogInvalid();
-      case 42:
+      case 40:
         var var_name = sse_decode_String(deserializer);
         return WalletError_ProvingKeyMismatch(name: var_name);
-      case 43:
+      case 41:
         var var_name = sse_decode_String(deserializer);
         return WalletError_ProvingKeyDownloadFailed(name: var_name);
-      case 44:
+      case 42:
         var var_name = sse_decode_String(deserializer);
         return WalletError_ProvingKeyCorrupt(name: var_name);
-      case 45:
+      case 43:
         var var_path = sse_decode_String(deserializer);
         return WalletError_ProvingKeyStoreFailed(path: var_path);
-      case 46:
+      case 44:
         var var_count = sse_decode_u_64(deserializer);
         return WalletError_PoseidonInputCountInvalid(count: var_count);
-      case 47:
+      case 45:
         var var_index = sse_decode_u_64(deserializer);
         var var_length = sse_decode_u_64(deserializer);
         return WalletError_PoseidonInputLengthInvalid(
           index: var_index,
           length: var_length,
         );
-      case 48:
+      case 46:
         return WalletError_SignerMissing();
-      case 49:
+      case 47:
         var var_wallet = sse_decode_String(deserializer);
         var var_signer = sse_decode_String(deserializer);
         return WalletError_SignerMismatch(
           wallet: var_wallet,
           signer: var_signer,
         );
-      case 50:
+      case 48:
         var var_signers = sse_decode_list_String(deserializer);
         return WalletError_UnexpectedSigners(signers: var_signers);
-      case 51:
+      case 49:
         return WalletError_WalletClosed();
-      case 52:
+      case 50:
         var var_message = sse_decode_String(deserializer);
         return WalletError_Client(message: var_message);
       default:
@@ -6576,94 +6562,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(22, serializer);
         sse_encode_u_64(expected, serializer);
         sse_encode_u_64(got, serializer);
-      case WalletError_TransactionNotConfirmed(signature: final signature):
-        sse_encode_i_32(23, serializer);
-        sse_encode_String(signature, serializer);
-      case WalletError_TransactionExpired(signature: final signature):
-        sse_encode_i_32(24, serializer);
-        sse_encode_String(signature, serializer);
       case WalletError_TransactionOutcomeUnknown(
         signature: final signature,
         message: final message,
       ):
-        sse_encode_i_32(25, serializer);
+        sse_encode_i_32(23, serializer);
         sse_encode_String(signature, serializer);
         sse_encode_String(message, serializer);
       case WalletError_RemoteProverMissing():
-        sse_encode_i_32(26, serializer);
+        sse_encode_i_32(24, serializer);
       case WalletError_ProverPolicyMissing():
-        sse_encode_i_32(27, serializer);
+        sse_encode_i_32(25, serializer);
       case WalletError_ProofMalformed():
-        sse_encode_i_32(28, serializer);
+        sse_encode_i_32(26, serializer);
       case WalletError_ProofInvalid():
-        sse_encode_i_32(29, serializer);
+        sse_encode_i_32(27, serializer);
       case WalletError_ProofFailed():
-        sse_encode_i_32(30, serializer);
+        sse_encode_i_32(28, serializer);
       case WalletError_ProverBusy():
-        sse_encode_i_32(31, serializer);
+        sse_encode_i_32(29, serializer);
       case WalletError_ProverClosed():
-        sse_encode_i_32(32, serializer);
+        sse_encode_i_32(30, serializer);
       case WalletError_ProverUnavailable():
-        sse_encode_i_32(33, serializer);
+        sse_encode_i_32(31, serializer);
       case WalletError_ProverLoadFailed():
-        sse_encode_i_32(34, serializer);
+        sse_encode_i_32(32, serializer);
       case WalletError_UnsupportedCircuit():
-        sse_encode_i_32(35, serializer);
+        sse_encode_i_32(33, serializer);
       case WalletError_RpcUrlInsecure(url: final url):
-        sse_encode_i_32(36, serializer);
+        sse_encode_i_32(34, serializer);
         sse_encode_String(url, serializer);
       case WalletError_IndexerUrlInsecure(url: final url):
-        sse_encode_i_32(37, serializer);
+        sse_encode_i_32(35, serializer);
         sse_encode_String(url, serializer);
       case WalletError_ProvingKeyUrlInsecure(url: final url):
-        sse_encode_i_32(38, serializer);
+        sse_encode_i_32(36, serializer);
         sse_encode_String(url, serializer);
       case WalletError_ProverUrlInsecure(url: final url):
-        sse_encode_i_32(39, serializer);
+        sse_encode_i_32(37, serializer);
         sse_encode_String(url, serializer);
       case WalletError_ProvingKeyUnknown(name: final name):
-        sse_encode_i_32(40, serializer);
+        sse_encode_i_32(38, serializer);
         sse_encode_String(name, serializer);
       case WalletError_ProvingKeyCatalogInvalid():
-        sse_encode_i_32(41, serializer);
+        sse_encode_i_32(39, serializer);
       case WalletError_ProvingKeyMismatch(name: final name):
-        sse_encode_i_32(42, serializer);
+        sse_encode_i_32(40, serializer);
         sse_encode_String(name, serializer);
       case WalletError_ProvingKeyDownloadFailed(name: final name):
-        sse_encode_i_32(43, serializer);
+        sse_encode_i_32(41, serializer);
         sse_encode_String(name, serializer);
       case WalletError_ProvingKeyCorrupt(name: final name):
-        sse_encode_i_32(44, serializer);
+        sse_encode_i_32(42, serializer);
         sse_encode_String(name, serializer);
       case WalletError_ProvingKeyStoreFailed(path: final path):
-        sse_encode_i_32(45, serializer);
+        sse_encode_i_32(43, serializer);
         sse_encode_String(path, serializer);
       case WalletError_PoseidonInputCountInvalid(count: final count):
-        sse_encode_i_32(46, serializer);
+        sse_encode_i_32(44, serializer);
         sse_encode_u_64(count, serializer);
       case WalletError_PoseidonInputLengthInvalid(
         index: final index,
         length: final length,
       ):
-        sse_encode_i_32(47, serializer);
+        sse_encode_i_32(45, serializer);
         sse_encode_u_64(index, serializer);
         sse_encode_u_64(length, serializer);
       case WalletError_SignerMissing():
-        sse_encode_i_32(48, serializer);
+        sse_encode_i_32(46, serializer);
       case WalletError_SignerMismatch(
         wallet: final wallet,
         signer: final signer,
       ):
-        sse_encode_i_32(49, serializer);
+        sse_encode_i_32(47, serializer);
         sse_encode_String(wallet, serializer);
         sse_encode_String(signer, serializer);
       case WalletError_UnexpectedSigners(signers: final signers):
-        sse_encode_i_32(50, serializer);
+        sse_encode_i_32(48, serializer);
         sse_encode_list_String(signers, serializer);
       case WalletError_WalletClosed():
-        sse_encode_i_32(51, serializer);
+        sse_encode_i_32(49, serializer);
       case WalletError_Client(message: final message):
-        sse_encode_i_32(52, serializer);
+        sse_encode_i_32(50, serializer);
         sse_encode_String(message, serializer);
     }
   }

@@ -16,8 +16,7 @@ remote prover URLs with a reviewed TEE policy.
 Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
 or a reviewed static `proverTeePolicy`. Missing policy fails before HTTP.
 Deployment endpoints are configured by the application.
-See [SDK configuration](packages/spr_mobile/README.md). Earlier programs'
-notes and pending transactions require their matching SDK and deployment.
+See [SDK configuration](packages/spr_mobile/README.md).
 
 ## Layout
 
