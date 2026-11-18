@@ -3,7 +3,7 @@
 use super::account::WalletConfig;
 use super::{
     history,
-    spend::{max_spend_inputs, spend_failure, within_cap},
+    spend::{max_spend_inputs, spend_inputs},
     MobileWallet,
 };
 use crate::{
@@ -13,9 +13,7 @@ use crate::{
 };
 use spr_client::{IndexerPollConfig, IndexerRpcConfig, Rpc, UtxoScan, UtxoScanResult};
 use spr_interface::MAX_INPUT_TREES;
-use spr_transaction::{
-    select_spend_excluding, AssetBalance, SpendableDecryptionResult, WalletUtxo,
-};
+use spr_transaction::{AssetBalance, SpendableDecryptionResult, WalletUtxo};
 use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
@@ -63,7 +61,10 @@ pub struct TokenBalance {
     /// `k + 1` outputs, its change included, and public outputs take no
     /// slot: a withdrawal, a withdrawal with one private fee, or a send to
     /// one wallet reads the entry with `outputs: 2`, a send to one wallet
-    /// with a fee the entry with `outputs: 4`. The limits include any
+    /// with a fee the entry with `outputs: 4`. A spend of an entry's whole
+    /// amount leaves no change, so it takes up to that entry's `outputs`
+    /// private outputs: a send of all of the `outputs: 2` entry to one
+    /// wallet with a fee proves on two outputs. The limits include any
     /// application fee the spend pays.
     pub limits: Vec<SpendLimit>,
 }
@@ -226,25 +227,26 @@ impl MobileWallet {
         history::entries(self, &scan)
     }
 
-    /// The notes a spend of `amount` with `outputs` outputs takes, other than
-    /// those prepared spends reserve: at most the configured cap and what the
-    /// pinned shapes allow, [`WalletError::MergeRequired`] beyond.
-    /// Reservations past their last valid block height are dropped: those
-    /// spends can no longer land.
+    /// The notes a spend of `amount` to `private` private outputs takes,
+    /// other than those prepared spends reserve: at most the configured cap
+    /// and what the pinned shapes allow for its outputs and change,
+    /// [`WalletError::MergeRequired`] beyond. Reservations past their last
+    /// valid block height are dropped: those spends can no longer land.
     pub(super) fn select_notes(
         &self,
         asset: Asset,
         amount: u64,
-        outputs: usize,
+        private: usize,
     ) -> Result<Vec<WalletUtxo>, WalletError> {
         let spendable = self.recent_notes()?;
         let reserved = self.reserved()?;
-        let inputs = select_spend_excluding(spendable.utxos(), asset.mint, amount, &reserved)
-            .map_err(|failure| spend_failure(amount, failure))?;
-        within_cap(
-            inputs,
+        spend_inputs(
+            spendable.utxos(),
+            asset.mint,
             amount,
-            self.max_spend_inputs.min(max_spend_inputs(outputs)),
+            private,
+            &reserved,
+            self.max_spend_inputs,
         )
     }
 

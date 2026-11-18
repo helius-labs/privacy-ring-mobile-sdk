@@ -503,10 +503,17 @@ mod tests {
         assert_eq!(shape, (2, 2), "the shape of the fixture proof");
         let mut unparsable: serde_json::Value = serde_json::from_slice(RESPONSE).unwrap();
         unparsable["proof"]["ar"] = serde_json::json!(["0x1"]);
+        let mut other_key: serde_json::Value = serde_json::from_slice(RESPONSE).unwrap();
+        other_key["provingKeySha256"] = serde_json::json!("08".repeat(32));
 
         for (response, failure) in [
             // A real proof, of another transaction.
             (RESPONSE.to_vec(), WalletError::ProofInvalid),
+            // A proof of another proving key than the pinned one.
+            (
+                other_key.to_string().into_bytes(),
+                WalletError::ProofMalformed,
+            ),
             (b"not json".to_vec(), WalletError::ProofMalformed),
             (
                 unparsable.to_string().into_bytes(),

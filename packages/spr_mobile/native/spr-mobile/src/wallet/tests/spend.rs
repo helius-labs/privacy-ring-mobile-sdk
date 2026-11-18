@@ -129,34 +129,117 @@ fn a_spend_checks_its_outputs_before_the_network() {
     assert!(asked.lock().unwrap().is_empty());
 }
 
-/// Private outputs and the change take the proof's output slots, public
-/// outputs none; the slots pick the widest keys, and with them the notes
-/// a spend can take.
+/// Private outputs take the proof's output slots, public outputs none; the
+/// slots pick the widest keys, and with them the notes a spend can take.
 #[test]
-fn private_outputs_and_the_change_take_the_proof_slots() {
+fn private_outputs_take_the_proof_slots() {
     let recipient = Pubkey::new_unique().to_string();
-    let slots = |outputs: &[Output]| proof_outputs(outputs);
-    assert_eq!(slots(&[public(&recipient, 1)]), 2);
-    assert_eq!(slots(&[public(&recipient, 1), public(&recipient, 1)]), 2);
-    assert_eq!(slots(&[private(&recipient, 1)]), 2);
-    assert_eq!(slots(&[private(&recipient, 1), public(&recipient, 1)]), 2);
-    assert_eq!(slots(&[private(&recipient, 1), private(&recipient, 1)]), 3);
+    assert_eq!(private_outputs(&[public(&recipient, 1)]), 0);
     assert_eq!(
-        slots(&[
+        private_outputs(&[private(&recipient, 1), public(&recipient, 1)]),
+        1
+    );
+    assert_eq!(
+        private_outputs(&[
             public(&recipient, 1),
             private(&recipient, 1),
             private(&recipient, 1),
             private(&recipient, 1),
         ]),
-        4
+        3
     );
-    // One private output and change: the 2-output keys, up to the SDK's
-    // cap. Two or three: the 4-output keys, which stop at 24 notes.
+    // Up to two outputs: the 2-output keys, up to the SDK's cap. Three or
+    // four: the 4-output keys, which stop at 24 notes.
+    assert_eq!(max_spend_inputs(0), MAX_SPEND_INPUTS);
     assert_eq!(max_spend_inputs(2), MAX_SPEND_INPUTS);
     assert_eq!(max_spend_inputs(3), 24);
     assert_eq!(max_spend_inputs(4), 24);
     assert_eq!(max_spend_inputs(5), 16);
     assert_eq!(max_spend_inputs(9), 8);
+    assert_eq!(max_spend_inputs(16), 8);
+    assert_eq!(max_spend_inputs(17), 0);
     assert!(canonical_shape(24, 3).is_ok());
     assert!(canonical_shape(25, 3).is_err());
+}
+
+/// The change takes a slot only when the notes hold more than the amount,
+/// as the SDK shapes the proof: a spend whose notes add up to its amount
+/// proves on the keys of its private outputs alone.
+#[test]
+fn an_exact_spend_proves_without_a_change_slot() {
+    let select = |notes: &[WalletUtxo], amount, private, configured| {
+        spend_inputs(
+            notes,
+            spr_transaction::SOL_MINT,
+            amount,
+            private,
+            &reserved(&[]),
+            configured,
+        )
+        .map(|inputs| inputs.len())
+    };
+    let notes = |count: u8| (1..=count).map(|n| note(10, n, 0)).collect::<Vec<_>>();
+    // All of 30 notes to one wallet with a fee: two outputs, no change,
+    // on the keys of 32 inputs and 2 outputs.
+    let thirty = notes(30);
+    assert_eq!(select(&thirty, 300, 2, MAX_SPEND_INPUTS), Ok(30));
+    assert!(canonical_shape(30, 2).is_ok());
+    // Change makes it three outputs, whose keys take 24 notes.
+    assert_eq!(
+        select(&thirty, 295, 2, MAX_SPEND_INPUTS),
+        Err(WalletError::MergeRequired {
+            amount: 295,
+            max_inputs: 24
+        })
+    );
+    // The configured cap still holds.
+    assert_eq!(
+        select(&thirty, 300, 2, 20),
+        Err(WalletError::MergeRequired {
+            amount: 300,
+            max_inputs: 20
+        })
+    );
+    // Sixteen exact recipients: the 16-output keys, which take 8 notes.
+    let eight = notes(8);
+    assert_eq!(select(&eight, 80, 16, MAX_SPEND_INPUTS), Ok(8));
+    assert_eq!(
+        select(&notes(9), 90, 16, MAX_SPEND_INPUTS),
+        Err(WalletError::MergeRequired {
+            amount: 90,
+            max_inputs: 8
+        })
+    );
+    // With change they would need 17 outputs, which no keys have.
+    assert_eq!(
+        select(&eight, 75, 16, MAX_SPEND_INPUTS),
+        Err(WalletError::MergeRequired {
+            amount: 75,
+            max_inputs: 0
+        })
+    );
+    // An exact withdrawal of 40 notes, and a withdrawal with change.
+    let forty = notes(40);
+    assert_eq!(select(&forty, 400, 0, MAX_SPEND_INPUTS), Ok(40));
+    assert_eq!(select(&forty, 395, 0, MAX_SPEND_INPUTS), Ok(40));
+}
+
+/// A merge whose owner's record holds another nullifier key is a
+/// registration conflict, which the SDK's error names no owner for.
+#[test]
+fn a_merge_against_another_nullifier_key_is_a_registration_conflict() {
+    let owner = Pubkey::new_unique();
+    assert_eq!(
+        merge_failure(owner, ClientError::MergeNullifierKeyMismatch),
+        WalletError::RegistrationConflict {
+            owner: owner.to_string()
+        }
+    );
+    assert_eq!(
+        merge_failure(
+            owner,
+            ClientError::MergeEncryptionSchemeUnsupported { owner }
+        ),
+        WalletError::MergingDisabled
+    );
 }

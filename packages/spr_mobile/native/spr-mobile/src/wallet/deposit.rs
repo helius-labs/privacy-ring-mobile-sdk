@@ -10,7 +10,8 @@ use spr_program::instruction::{
 
 impl MobileWallet {
     /// Deposit public SOL (`mint` `None`) or tokens from this account into
-    /// its own private balance. Deposits carry no proof.
+    /// its own private balance. Deposits carry no proof. A deposit of zero
+    /// fails with [`WalletError::AmountZero`] before the network.
     ///
     /// The first deposit of a mint into the pool creates the mint's registry
     /// entry and vault in the same transaction, signed and paid for by this
@@ -25,6 +26,9 @@ impl MobileWallet {
         amount: u64,
         priority_fee_lamports: Option<u64>,
     ) -> Result<PreparedTransaction, WalletError> {
+        if amount == 0 {
+            return Err(WalletError::AmountZero);
+        }
         let (asset, registered) = self
             .assets()
             .resolve_for_deposit(&self.client, mint.as_deref())?;
@@ -52,14 +56,14 @@ impl MobileWallet {
                 token_program,
             }),
         };
-        // The wallet's viewing key tags a deposit: it is how the wallet finds
-        // the output without knowing who sent it.
+        // The signing key's tag marks the deposit, as it marks every note
+        // this wallet receives: the wallet's scan reads it back by that tag.
         let deposit = Deposit {
             tree: pda::tree(0),
             depositor: self.owner,
             deposits: vec![AssetDeposit {
                 asset: deposit_asset,
-                view_tag: self.address.viewing_pubkey.u(),
+                view_tag: self.address.confidential_view_tag()?,
                 owner: self.address.owner_hash()?,
                 amount,
                 memo: None,

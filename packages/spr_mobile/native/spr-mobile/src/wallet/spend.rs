@@ -21,8 +21,9 @@ use spr_keypair::ShieldedAddress;
 use spr_program::instruction::{CreateAssociatedTokenAccount, TransactInterfaceTransferAccounts};
 use spr_transaction::{
     instructions::transact::{ConfidentialTransaction, MAX_SPEND_INPUTS},
-    TransactionError, WalletUtxo,
+    select_spend_excluding, TransactionError, WalletUtxo,
 };
+use std::collections::HashSet;
 
 /// An output whose recipient was checked on chain.
 pub(super) enum Leg {
@@ -57,11 +58,15 @@ impl MobileWallet {
     /// the spend, the fee payer pays its rent, and
     /// [`Operation::Spend`]'s `created_token_accounts` names the recipient.
     ///
-    /// The private outputs and the change take the proof's output slots,
-    /// public outputs none: a spend with `k` private outputs proves with
+    /// Each private output takes one of the proof's output slots, the change
+    /// one more when the selected notes hold more than the amount, and public
+    /// outputs none. A spend with `k` private outputs and change proves with
     /// `k + 1` outputs, whose keys take at most 40 notes for `k <= 1`, 24
-    /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`, within
-    /// [`WalletConfig::max_spend_inputs`]; past that it fails with
+    /// for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`; one whose notes
+    /// add up to the amount exactly, such as a spend of the whole balance,
+    /// proves with `k` outputs and takes at most 40 notes for `k <= 2`, 24
+    /// for `k <= 4`, 16 for `k <= 8` and 8 for `k <= 16`. Both stay within
+    /// [`WalletConfig::max_spend_inputs`]; past that the spend fails with
     /// [`WalletError::MergeRequired`]. [`TokenBalance::limits`] says what
     /// each width can take now.
     ///
@@ -120,13 +125,14 @@ impl MobileWallet {
         let payer = self.fee_payer(fee_payer)?;
         let proving = self.proving(proving)?;
         let asset = self.asset(mint)?;
+        let private = private_outputs(&outputs);
         let (legs, inputs) = beside(
             || self.legs(asset, &outputs, &recipients),
             || {
                 if cached.is_empty() {
-                    self.select_notes(asset, total, proof_outputs(&outputs))
+                    self.select_notes(asset, total, private)
                 } else {
-                    self.select_cached_notes(&cached, asset, total, proof_outputs(&outputs))
+                    self.select_cached_notes(&cached, asset, total, private)
                 }
             },
         );
@@ -296,15 +302,46 @@ pub(super) fn spend_failure(amount: u64, failure: TransactionError) -> WalletErr
     }
 }
 
-/// The proof's output slots a spend to `outputs` takes: each private output
-/// and the change, two at least, the narrowest keys' width. Public outputs
-/// settle outside the proof's outputs.
-pub(super) fn proof_outputs(outputs: &[Output]) -> usize {
-    let private = outputs
+/// The private outputs among `outputs`, each one of the proof's output
+/// slots. Public outputs settle outside the proof's outputs.
+pub(super) fn private_outputs(outputs: &[Output]) -> usize {
+    outputs
         .iter()
         .filter(|output| matches!(output, Output::Private { .. }))
-        .count();
-    (private + 1).max(2)
+        .count()
+}
+
+/// The notes a spend of `amount` of `mint` to `private` private outputs
+/// takes from `notes`, those in `reserved` left out: the Zolana SDK's
+/// selection, largest first, within [`within_spend_cap`].
+pub(super) fn spend_inputs<'a>(
+    notes: impl IntoIterator<Item = &'a WalletUtxo>,
+    mint: Pubkey,
+    amount: u64,
+    private: usize,
+    reserved: &HashSet<[u8; 32]>,
+    configured: usize,
+) -> Result<Vec<WalletUtxo>, WalletError> {
+    let inputs = select_spend_excluding(notes, mint, amount, reserved)
+        .map_err(|failure| spend_failure(amount, failure))?;
+    within_spend_cap(inputs, amount, private, configured)
+}
+
+/// `inputs` when a spend of `amount` to `private` private outputs may take
+/// that many notes, else what to merge for. As the Zolana SDK picks the
+/// proof's shape once the notes are chosen, the change takes an output slot
+/// only when `inputs` hold more than `amount`, and the outputs pick the
+/// widest keys: at most their notes, within `configured`
+/// ([`WalletConfig::max_spend_inputs`]).
+pub(super) fn within_spend_cap(
+    inputs: Vec<WalletUtxo>,
+    amount: u64,
+    private: usize,
+    configured: usize,
+) -> Result<Vec<WalletUtxo>, WalletError> {
+    let covered: u128 = inputs.iter().map(|note| u128::from(note.utxo.amount)).sum();
+    let outputs = private + usize::from(covered > u128::from(amount));
+    within_cap(inputs, amount, configured.min(max_spend_inputs(outputs)))
 }
 
 /// The most notes a spend with `outputs` outputs takes: the widest pinned

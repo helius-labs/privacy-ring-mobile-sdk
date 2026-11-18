@@ -160,10 +160,13 @@ await wallet.spend(
   ]);
   ```
 
-  A spend with `k` private outputs proves with `k + 1` outputs, its change
-  included, and public outputs take no proof slot: the keys take at most 40
-  notes for `k <= 1`, 24 for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`,
-  within `WalletConfig.maxSpendInputs`. Past that the spend fails with
+  A spend with `k` private outputs and change proves with `k + 1` outputs,
+  and public outputs take no proof slot: the keys take at most 40 notes for
+  `k <= 1`, 24 for `k <= 3`, 16 for `k <= 7` and 8 for `k <= 15`. A spend
+  whose notes add up to the amount exactly, such as a spend of the whole
+  balance, has no change and proves with `k` outputs: 40 notes for `k <= 2`,
+  24 for `k <= 4`, 16 for `k <= 8` and 8 for `k <= 16`. Both stay within
+  `WalletConfig.maxSpendInputs`. Past that the spend fails with
   `WalletError.mergeRequired`; `TokenBalance.limits` says what each width can
   take now (see [Balances](#balances)). The prepared spend's
   `Operation_Spend` lists each output in order. An empty list fails with
@@ -418,15 +421,15 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `insufficientPrivateBalance` | `requested`, `available` | the spendable notes of the asset do not cover the amount |
 | `mergeRequired` | `amount`, `maxInputs` | the amount needs more notes than one spend takes |
 | `tooManyInputTrees` | `trees`, `maxTrees` | the notes that cover the amount are on more trees than one spend takes (2) |
-| `amountZero` | | the amount of a spend is zero |
+| `amountZero` | | the amount of a spend or a deposit is zero |
 | `noOutputs` | | a spend has no outputs |
 | `nothingToMerge` | `mint` | fewer than two notes of the mint are free to merge on any one tree |
-| `mergingDisabled` | | the account's record does not enable merging |
+| `mergingDisabled` | | the account is not registered, or its record does not enable merging |
 | `indexerBehind` | `indexerSlot`, `rpcSlot` | the indexer did not reach the RPC's confirmed slot within about ten seconds |
 | `notesAlreadySpent` | | the chain already spent a note the transaction spends: the indexer was behind when it was prepared |
 | `notesReserved` | `amount` | only notes a prepared spend reserves would cover the amount |
 | `recipientNotRegistered` | `recipient` | the recipient has no shielded address in the registry |
-| `registrationConflict` | `owner` | the registry holds other keys for this account |
+| `registrationConflict` | `owner` | the registry holds other keys for this account, at registration or a merge |
 | `assetNotSupported` | `mint` | the shielded pool has not registered the mint, and this call cannot: a spend, a merge, or a deposit the pool lets only its authority register; or the mint is not an SPL Token or Token-2022 mint |
 | `mintNotConfigured` | `mint` | `WalletConfig.mints` lists mints and this one is not among them |
 | `invalidMint` | `mint` | not a base58 key |
@@ -443,7 +446,7 @@ Every failure throws one of these `WalletError` variants. Amounts are in base un
 | `transactionExpired` | `signature` | retained for compatibility; missing history after expiry now returns `transactionOutcomeUnknown` |
 | `transactionOutcomeUnknown` | `signature`, `message` | a send went unanswered and whether it landed could not be told; wait for it before sending it again |
 | `remoteProverMissing` | | the spend asked for remote proving without `WalletConfig.proverUrl` |
-| `proofMalformed` | | the remote prover's response is not a proof of the pinned proving key |
+| `proofMalformed` | | the remote prover's response is not a proof of the pinned proving key, or names another key |
 | `proofInvalid` | | the proof does not verify against the pinned verifying key |
 | `proofFailed` | | the device prover could not prove the request |
 | `proverBusy`, `proverClosed`, `proverUnavailable` | | the prepared prover slot is taken, released or unusable |
@@ -853,8 +856,8 @@ Current limits: a spend takes at most `WalletConfig.maxSpendInputs` notes
 (40 when unset, the most a key supports) from at most two trees and fails
 with `WalletError.mergeRequired` or `WalletError.tooManyInputTrees` beyond
 that (see [Merges](#merges)); one prepared prover is loaded per process, so
-close a `LocalProver` before the wallet proves. A spend of zero fails with
-`WalletError.amountZero`. Proof time and memory grow with the notes a spend
+close a `LocalProver` before the wallet proves. A spend or deposit of zero
+fails with `WalletError.amountZero`. Proof time and memory grow with the notes a spend
 takes, so set the cap to what the phones you support prove in the time you
 accept, and merge before spends need more: `TokenBalance.notes` says how
 many notes each balance is in, and `TokenBalance.limits` what one spend can
@@ -878,8 +881,11 @@ same from one read with the history and `unresolvedAssets`:
   most two trees. A spend with `k` private outputs uses `k + 1` outputs, and
   public outputs take no slot: a withdrawal, a withdrawal with one private
   fee, or a send to one wallet reads the entry with `outputs: 2`, a send to
-  one wallet with a fee the entry with `outputs: 4`. The limits include any
-  application fee the spend pays. Every amount up to a limit selects; one
+  one wallet with a fee the entry with `outputs: 4`. A spend of an entry's
+  whole amount leaves no change, so it takes up to that entry's `outputs`
+  private outputs: a send of all of the `outputs: 2` entry to one wallet with
+  a fee proves on two outputs. The limits include any application fee the
+  spend pays. Every amount up to a limit selects; one
   more fails with `WalletError.mergeRequired`,
   `WalletError.tooManyInputTrees` or `WalletError.insufficientPrivateBalance`.
 
