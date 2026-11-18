@@ -12,6 +12,8 @@ use sha2::Sha256;
 use solana_instruction::Instruction;
 use solana_message::VersionedMessage;
 use spr_client::{compile_message, ClientError, ComputeBudgetConfig, Rpc, UnsignedMessage};
+use spr_interface::SHIELDED_POOL_PROGRAM_ID;
+use spr_user_registry_interface::USER_REGISTRY_PROGRAM_ID;
 use std::collections::{HashMap, HashSet};
 
 /// A transaction the wallet built and, where needed, proved, awaiting
@@ -300,7 +302,8 @@ impl MobileWallet {
 }
 
 impl MobileWallet {
-    /// Versioned, wallet-authenticated snapshot. Contains private amounts and
+    /// Versioned, wallet-authenticated snapshot, bound to the deployment and
+    /// not to the RPC and indexer URLs. Contains private amounts and
     /// blindings: store securely with the run and submission signatures.
     pub fn export_prepared_transaction(
         &self,
@@ -318,7 +321,7 @@ impl MobileWallet {
         };
         let payload = serde_json::to_string(&state)
             .map_err(|_| invalid("cannot serialize prepared transaction"))?;
-        let mut mac = self.state_mac();
+        let mut mac = self.state_mac()?;
         mac.update(payload.as_bytes());
         serde_json::to_string(&Envelope {
             payload,
@@ -330,6 +333,13 @@ impl MobileWallet {
     /// Restore before allowing new spends. Restored reservations stay until
     /// explicitly released or the transaction outcome is settled; expiry alone
     /// does not establish that an interrupted submission failed.
+    ///
+    /// Only a wallet of the same account on the same deployment restores a
+    /// snapshot: the same cluster, by its genesis hash, and the same program
+    /// ids. The RPC and indexer URLs may differ, such as by a rotated
+    /// `api-key`. A wallet reads the genesis hash at its first export or
+    /// restore; when the RPC does not answer, the call fails as a read does,
+    /// and the snapshot stays valid.
     pub fn restore_prepared_transaction(
         &self,
         snapshot: String,
@@ -339,7 +349,7 @@ impl MobileWallet {
         }
         let envelope: Envelope =
             serde_json::from_str(&snapshot).map_err(|_| invalid("invalid snapshot"))?;
-        let mut mac = self.state_mac();
+        let mut mac = self.state_mac()?;
         mac.update(envelope.payload.as_bytes());
         mac.verify_slice(&envelope.tag)
             .map_err(|_| invalid("snapshot authentication failed"))?;
@@ -363,13 +373,28 @@ impl MobileWallet {
         self.reserve_until(pending, state.spends, u64::MAX)
     }
 
-    fn state_mac(&self) -> Hmac<Sha256> {
+    /// Keyed by the nullifier secret, so that only this wallet authenticates
+    /// its snapshots, and bound to the account and the deployment, not to the
+    /// URLs that reach it.
+    fn state_mac(&self) -> Result<Hmac<Sha256>, WalletError> {
+        let genesis_hash = self.genesis_hash()?;
         let mut mac = Hmac::<Sha256>::new_from_slice(self.nullifier_key.secret().as_ref())
             .expect("HMAC accepts all key lengths");
         mac.update(b"spr-mobile/prepared/v2/8ae430a1");
         mac.update(&self.owner.to_bytes());
-        mac.update(self.recovery_domain.as_bytes());
-        mac
+        mac.update(&genesis_hash);
+        mac.update(&SHIELDED_POOL_PROGRAM_ID);
+        mac.update(&USER_REGISTRY_PROGRAM_ID);
+        Ok(mac)
+    }
+
+    /// The cluster's genesis hash, read from the RPC once per wallet.
+    fn genesis_hash(&self) -> Result<[u8; 32], WalletError> {
+        if let Some(hash) = self.genesis_hash.get() {
+            return Ok(*hash);
+        }
+        let hash = self.client.rpc().genesis_hash()?;
+        Ok(*self.genesis_hash.get_or_init(|| hash))
     }
 }
 

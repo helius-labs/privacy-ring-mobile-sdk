@@ -656,6 +656,19 @@ it returns `transactionOutcomeUnknown`, even after `lastValidBlockHeight`.
 That height stops waiting early; it does not prove the payment never landed.
 The application keeps the pending signature and decides when to check again.
 
+### Prepared snapshots
+
+`exportPreparedTransaction` returns a snapshot that only a wallet of the same
+account on the same deployment restores. Its tag is an HMAC, keyed by the
+wallet's nullifier secret, over the account, the cluster's genesis hash and the
+shielded-pool and user-registry program IDs. The RPC and indexer URLs are not
+part of it: a rotated `api-key`, another query parameter or another endpoint of
+the same cluster restores the snapshot, and a snapshot of another cluster or
+program deployment fails with `WalletError.client` (`snapshot authentication
+failed`). A wallet reads the genesis hash from its RPC at its first export or
+restore and keeps it. If that read fails, the call fails as any read does; the
+snapshot stays valid, so keep it and try again.
+
 ### Sponsored cache merges (v0.6)
 
 For a backend that accepts `[CreateCache, MergeTransact]`, pass a `cacheTarget`

@@ -6826,7 +6826,8 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   Future<WalletKeys> exportKeys() =>
       RustLib.instance.api.sprMobileMobileWalletExportKeys(that: this);
 
-  /// Versioned, wallet-authenticated snapshot. Contains private amounts and
+  /// Versioned, wallet-authenticated snapshot, bound to the deployment and
+  /// not to the RPC and indexer URLs. Contains private amounts and
   /// blindings: store securely with the run and submission signatures.
   Future<String> exportPreparedTransaction({
     required PreparedTransaction pending,
@@ -7061,6 +7062,13 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   /// Restore before allowing new spends. Restored reservations stay until
   /// explicitly released or the transaction outcome is settled; expiry alone
   /// does not establish that an interrupted submission failed.
+  ///
+  /// Only a wallet of the same account on the same deployment restores a
+  /// snapshot: the same cluster, by its genesis hash, and the same program
+  /// ids. The RPC and indexer URLs may differ, such as by a rotated
+  /// `api-key`. A wallet reads the genesis hash at its first export or
+  /// restore; when the RPC does not answer, the call fails as a read does,
+  /// and the snapshot stays valid.
   Future<PreparedTransaction> restorePreparedTransaction({
     required String snapshot,
   }) => RustLib.instance.api.sprMobileMobileWalletRestorePreparedTransaction(

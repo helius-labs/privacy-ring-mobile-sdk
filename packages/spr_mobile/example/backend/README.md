@@ -196,10 +196,11 @@ keep that override current. Never learn trust pins from the prover being verifie
 ## Recovery and limitations
 
 `exportPreparedTransaction` preserves message bytes, input nullifiers, output
-openings and cache descriptors. Restore it with the same wallet and RPC/indexer
-configuration **before preparing new spends**. Snapshots are authenticated to
-that wallet/configuration and contain private data; authentication is not
-encryption. The example encrypts its run file with AES-GCM and writes it before
+openings and cache descriptors. Restore it with the same wallet on the same
+deployment **before preparing new spends**. Snapshots are authenticated to that
+wallet, cluster and program deployment, not to the RPC/indexer URLs (see
+[Prepared snapshots](../../README.md#prepared-snapshots)), and contain private
+data; authentication is not encryption. The example encrypts its run file with AES-GCM and writes it before
 each handoff, including the user's signature before submitting the payment.
 Production should use device-keystore-backed storage and backup policy. Public
 demo seeds do not provide storage confidentiality against someone with the seed.

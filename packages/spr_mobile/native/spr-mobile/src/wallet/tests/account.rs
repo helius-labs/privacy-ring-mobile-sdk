@@ -18,12 +18,39 @@ fn opens_only_from_a_signature_over_the_derivation_message() {
         other_message.as_ref().to_vec(),
         other_signer.as_ref().to_vec(),
         vec![0; 63],
+        [
+            signer
+                .sign_message(&derivation_message(pubkey.clone()).unwrap())
+                .as_ref(),
+            &[0],
+        ]
+        .concat(),
     ] {
         assert_eq!(
             MobileWallet::open(config(), pubkey.clone(), signature, unreachable()).err(),
             Some(WalletError::InvalidDerivationSignature)
         );
     }
+}
+
+/// The keys a signer's derivation signature opens, pinned: an application
+/// that saved them, or the registry record that publishes them, still matches.
+#[test]
+fn a_fixed_signer_derives_the_same_keys() {
+    let wallet = open(&Keypair::new_from_array([7; 32])).unwrap();
+    assert_eq!(
+        wallet.shielded_address(),
+        "yjJFUJ121AUn7hPEuvQyFvY6jgKBQXtTaZ74Y8t7M64f3rpXB5PevHV2vuMPmREqCbyKtJDaNzRAw3VQkeTSpTWx3STadjHF6rJwJQ3ZjtNRqg1JAASVCpNESXcPuxQkwhHcvV"
+    );
+    let keys = wallet.export_keys();
+    assert_eq!(
+        hex::encode(&keys.nullifier_private_key),
+        "f172e55a6d39bf1602b0ef9d7276882b68c84dea44867b491091056e36cea1"
+    );
+    assert_eq!(
+        hex::encode(&keys.viewing_private_key),
+        "a8c6cdc96a3f47a472674331e76bd7237bceb675e513d4faee8734847d376945"
+    );
 }
 
 #[test]

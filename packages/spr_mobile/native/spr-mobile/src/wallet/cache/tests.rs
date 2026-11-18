@@ -1,6 +1,7 @@
 use super::*;
 use crate::wallet::prepared::Envelope;
-use crate::wallet::tests::{open, unsigned};
+use crate::wallet::tests::{cluster_wallet, config, open, unsigned, GENESIS};
+use crate::wallet::WalletConfig;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use std::sync::{Arc, Mutex};
@@ -54,15 +55,33 @@ fn cache_terms_fail_before_network_or_proof() {
         .is_err());
 }
 
+fn on_cluster(signer: &Keypair) -> MobileWallet {
+    cluster_wallet(signer, config(), GENESIS).0
+}
+
+fn endpoints(rpc_url: &str, indexer_url: &str) -> WalletConfig {
+    WalletConfig {
+        rpc_url: rpc_url.to_string(),
+        indexer_url: indexer_url.to_string(),
+        ..config()
+    }
+}
+
+fn authentication_failed() -> WalletError {
+    WalletError::Client {
+        message: "snapshot authentication failed".to_string(),
+    }
+}
+
 #[test]
 fn snapshots_authenticate_message_metadata_wallet_and_restore_reservations() {
     let signer = Keypair::new();
-    let wallet = open(&signer).unwrap();
+    let wallet = on_cluster(&signer);
     let mut pending = unsigned(&signer);
     pending.spends = vec![[9; 32]];
     pending.last_valid_block_height = 123;
     let snapshot = wallet.export_prepared_transaction(&pending).unwrap();
-    let reopened = open(&signer).unwrap();
+    let reopened = on_cluster(&signer);
     let restored = reopened
         .restore_prepared_transaction(snapshot.clone())
         .unwrap();
@@ -78,15 +97,19 @@ fn snapshots_authenticate_message_metadata_wallet_and_restore_reservations() {
         .unwrap();
     assert_eq!(duplicate.id, restored.id);
     assert_eq!(reopened.reservations().reserved.len(), 1);
-    let other = open(&Keypair::new()).unwrap();
-    assert!(other
-        .restore_prepared_transaction(snapshot.clone())
-        .is_err());
+    let other = on_cluster(&Keypair::new());
+    assert_eq!(
+        other.restore_prepared_transaction(snapshot.clone()).err(),
+        Some(authentication_failed())
+    );
     let mut envelope: Envelope = serde_json::from_str(&snapshot).unwrap();
     envelope.payload = envelope.payload.replace("123", "124");
-    assert!(reopened
-        .restore_prepared_transaction(serde_json::to_string(&envelope).unwrap())
-        .is_err());
+    assert_eq!(
+        reopened
+            .restore_prepared_transaction(serde_json::to_string(&envelope).unwrap())
+            .err(),
+        Some(authentication_failed())
+    );
     // A different signed message may spend the same inputs. Releasing
     // the first must not release the second after a restart.
     pending.message.set_recent_blockhash([8; 32].into());
@@ -98,6 +121,79 @@ fn snapshots_authenticate_message_metadata_wallet_and_restore_reservations() {
     assert_eq!(reopened.reservations().reserved.len(), 1);
     reopened.release(&other_message);
     assert!(reopened.reservations().reserved.is_empty());
+}
+
+#[test]
+fn snapshots_restore_through_other_endpoints_of_the_deployment() {
+    let signer = Keypair::new();
+    let (wallet, asked) = cluster_wallet(
+        &signer,
+        endpoints(
+            "https://rpc.example/?api-key=old",
+            "https://indexer.example/v1/spr?api-key=old",
+        ),
+        GENESIS,
+    );
+    let mut pending = unsigned(&signer);
+    pending.spends = vec![[9; 32]];
+    let snapshot = wallet.export_prepared_transaction(&pending).unwrap();
+    // A rotated API key, another query parameter, and another host of the
+    // same cluster, such as a staging edge in front of the same indexer.
+    for (rpc_url, indexer_url) in [
+        (
+            "https://rpc.example/?api-key=new",
+            "https://indexer.example/v1/spr?api-key=new",
+        ),
+        (
+            "https://rpc.example/?api-key=old&region=eu",
+            "https://indexer.example/v1/spr?api-key=old",
+        ),
+        (
+            "https://rpc-next.example",
+            "https://indexer-next.example/v1/spr",
+        ),
+    ] {
+        let (reopened, _) = cluster_wallet(&signer, endpoints(rpc_url, indexer_url), GENESIS);
+        let restored = reopened
+            .restore_prepared_transaction(snapshot.clone())
+            .unwrap();
+        assert_eq!(restored.message(), pending.message());
+        assert_eq!(
+            reopened.reservations().reserved[&restored.id].spends,
+            vec![[9; 32]]
+        );
+    }
+    // The wallet reads the genesis hash once.
+    wallet.restore_prepared_transaction(snapshot).unwrap();
+    assert_eq!(*asked.lock().unwrap(), ["getGenesisHash"]);
+}
+
+#[test]
+fn snapshots_do_not_restore_on_another_deployment() {
+    let signer = Keypair::new();
+    let mut pending = unsigned(&signer);
+    pending.spends = vec![[9; 32]];
+    let snapshot = on_cluster(&signer)
+        .export_prepared_transaction(&pending)
+        .unwrap();
+    let (other_cluster, _) = cluster_wallet(&signer, config(), [6; 32]);
+    assert_eq!(
+        other_cluster
+            .restore_prepared_transaction(snapshot.clone())
+            .err(),
+        Some(authentication_failed())
+    );
+    assert!(other_cluster.reservations().reserved.is_empty());
+    // Without the genesis hash the wallet cannot tell its deployment: the
+    // restore fails as the network does, not as a foreign snapshot.
+    let offline = open(&signer).unwrap();
+    let error = offline.restore_prepared_transaction(snapshot.clone()).err();
+    assert!(
+        matches!(&error, Some(WalletError::Client { message }) if message != "snapshot authentication failed"),
+        "{error:?}"
+    );
+    assert!(offline.reservations().reserved.is_empty());
+    assert!(offline.export_prepared_transaction(&pending).is_err());
 }
 
 #[test]
@@ -173,7 +269,7 @@ fn cache_reads_check_owner_terms_commitments_and_duplicate_slots() {
 #[test]
 fn snapshots_preserve_cache_prediction_and_run_terms() {
     let signer = Keypair::new();
-    let wallet = open(&signer).unwrap();
+    let wallet = on_cluster(&signer);
     let mut pending = unsigned(&signer);
     let mint = spr_transaction::Mint::SOL;
     let utxo = Utxo {
@@ -197,7 +293,7 @@ fn snapshots_preserve_cache_prediction_and_run_terms() {
         commitment,
     });
     let state = wallet.export_prepared_transaction(&pending).unwrap();
-    let reopened = open(&signer).unwrap();
+    let reopened = on_cluster(&signer);
     let restored = reopened.restore_prepared_transaction(state).unwrap();
     let output = restored.cached_output().unwrap();
     assert_eq!(output.amount(), 42);

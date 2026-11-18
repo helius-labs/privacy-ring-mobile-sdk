@@ -2,6 +2,12 @@
 
 Unreleased.
 
+* Bind prepared snapshots to the account, the cluster's genesis hash and the
+  program IDs instead of the RPC and indexer URLs, so a rotated `api-key` or
+  another endpoint of the same cluster still restores them. A wallet reads the
+  genesis hash at its first export or restore.
+* Wipe the derivation signature from memory when `open` returns.
+
 * Add `WalletConfig.proverTeePolicyUrl`: download the signed policy of
   `proverTeeNetwork` from another HTTPS URL, such as a staging deployment's,
   verified by the same pinned signers. It needs `proverTeeNetwork`; a plain
