@@ -33,7 +33,6 @@ use crate::ProvedRequest;
 /// The upstream prover's default key host.
 pub const DEFAULT_PROVING_KEYS_URL: &str = "https://d3gbdb0egjwcw9.cloudfront.net";
 
-const LOCKFILE: &str = include_str!("../proving-keys.lock");
 const ZOPRO_LOCKFILE: &str = include_str!("../zopro-keys.lock");
 
 /// Bytes per ranged request of a download: what a resumed download repeats
@@ -43,21 +42,6 @@ const PART: u64 = 8 << 20;
 /// Marks a directory as a key set this store manages, so pruning removes
 /// nothing else under the configured directory.
 const SET_MARKER: &str = ".zolana-proving-keys";
-
-#[derive(Deserialize)]
-struct Lockfile {
-    keys: HashMap<String, KeyEntry>,
-}
-
-/// A gnark proving key as upstream pins it.
-#[derive(Deserialize)]
-struct KeyEntry {
-    /// Only the tests read it: they check the zopro lockfile and the
-    /// program's verifying keys against it.
-    #[cfg_attr(not(test), allow(dead_code))]
-    sha256: String,
-    size: u64,
-}
 
 #[derive(Deserialize)]
 struct Artifacts {
@@ -151,11 +135,6 @@ fn catalog_urls(
     Ok(urls)
 }
 
-fn lockfile() -> &'static Lockfile {
-    static LOCK: OnceLock<Lockfile> = OnceLock::new();
-    LOCK.get_or_init(|| serde_json::from_str(LOCKFILE).expect("embedded lockfile is valid JSON"))
-}
-
 fn artifacts() -> &'static Artifacts {
     static LOCK: OnceLock<Artifacts> = OnceLock::new();
     LOCK.get_or_init(|| {
@@ -167,18 +146,6 @@ fn artifacts() -> &'static Artifacts {
 fn key_set() -> &'static str {
     let prefix = artifacts().prefix.trim_end_matches('/');
     prefix.rsplit('/').next().unwrap_or(prefix)
-}
-
-/// A key this wallet proves with on the device: a confidential transfer or a
-/// merge. The lockfile also pins ring and custom-ring keys it never loads.
-fn is_wallet_key(name: &str) -> bool {
-    name.strip_prefix("transfer_confidential_")
-        .and_then(|shape| shape.strip_suffix(".key"))
-        .and_then(|shape| shape.split_once('_'))
-        .is_some_and(|(inputs, outputs)| {
-            inputs.parse::<u32>().is_ok() && outputs.parse::<u32>().is_ok()
-        })
-        || (name.starts_with("merge_") && name.ends_with("_1.key") && !name.contains("ring"))
 }
 
 /// A proving key of the wallet and how much of it is on the device.
@@ -411,27 +378,18 @@ impl KeyStore {
     }
 
     fn status(&self) -> Vec<ProvingKeyStatus> {
-        let mut keys: Vec<ProvingKeyStatus> = lockfile()
+        let mut keys: Vec<ProvingKeyStatus> = artifacts()
             .keys
             .iter()
-            .filter(|(name, _)| is_wallet_key(name))
             .filter(|(name, _)| {
                 self.catalog_urls
                     .as_ref()
                     .is_none_or(|urls| urls.contains_key(*name))
             })
-            .map(|(name, key)| match artifacts().keys.get(name) {
-                Some(entry) => ProvingKeyStatus {
-                    name: name.clone(),
-                    size: entry.size,
-                    downloaded: self.on_disk(name, entry),
-                },
-                // Not built yet: nothing to download.
-                None => ProvingKeyStatus {
-                    name: name.clone(),
-                    size: key.size,
-                    downloaded: 0,
-                },
+            .map(|(name, entry)| ProvingKeyStatus {
+                name: name.clone(),
+                size: entry.size,
+                downloaded: self.on_disk(name, entry),
             })
             .collect();
         keys.sort_by(|a, b| a.size.cmp(&b.size).then_with(|| a.name.cmp(&b.name)));
@@ -1070,47 +1028,34 @@ mod tests {
                 shape.n_inputs(),
                 shape.n_outputs()
             );
-            assert!(lockfile().keys.contains_key(&name), "{name} is not pinned");
+            assert!(artifacts().keys.contains_key(&name), "{name} is not pinned");
         }
     }
 
     #[test]
-    fn status_excludes_the_upstream_eddsa_circuits_without_local_keys() {
+    fn status_lists_every_zopro_key() {
         let store = KeyStore::new(scratch("status-catalog"), None, unreachable());
         let status = store.status();
         assert_eq!(status.len(), artifacts().keys.len());
         assert!(status
             .iter()
             .all(|key| artifacts().keys.contains_key(&key.name)));
-        assert!(lockfile()
-            .keys
-            .keys()
-            .any(|name| name.starts_with("transfer_confidential_eddsa_")));
     }
 
-    #[test]
-    fn pinned_keys_match_the_verifying_keys() {
-        for (name, sha256) in spr_interface::verifying_keys::PROVING_KEY_SHA256S {
-            if let Some(entry) = lockfile().keys.get(*name) {
-                assert_eq!(entry.sha256, hex(sha256), "{name}");
-            }
-        }
-    }
-
-    /// Every zopro key is built from a pinned gnark key, with its digest.
+    /// Every zopro key is built from the gnark key the program's verifying
+    /// key pins, with its digest.
     #[test]
     fn zopro_keys_are_built_from_the_pinned_keys() {
         assert!(!artifacts().keys.is_empty());
         // Converted artifacts keep their own publication prefix when unrelated
         // gnark circuits are added. The source digest is the compatibility pin.
         for (name, entry) in &artifacts().keys {
-            let key = lockfile()
-                .keys
-                .get(name)
+            let (_, sha256) = spr_interface::verifying_keys::PROVING_KEY_SHA256S
+                .iter()
+                .find(|(pinned, _)| pinned == name)
                 .unwrap_or_else(|| panic!("{name} is not pinned"));
-            assert_eq!(entry.key_sha256, key.sha256, "{name}");
+            assert_eq!(entry.key_sha256, hex(sha256), "{name}");
             assert_eq!(entry.file, name.replace(".key", ".zopro"), "{name}");
-            assert!(is_wallet_key(name), "{name}");
         }
     }
 
@@ -1463,7 +1408,9 @@ mod tests {
         let root = scratch("status");
         let store = KeyStore::new(&root, None, unreachable());
         let status = store.status();
-        assert!(status.iter().all(|key| is_wallet_key(&key.name)));
+        assert!(status
+            .iter()
+            .all(|key| artifacts().keys.contains_key(&key.name)));
         assert!(status.iter().any(|key| key.name == "merge_52_1.key"));
         assert!(!status.iter().any(|key| key.name.contains("ring")));
         assert!(status.windows(2).all(|pair| pair[0].size <= pair[1].size));

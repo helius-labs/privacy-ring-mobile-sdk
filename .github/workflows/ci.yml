@@ -73,8 +73,6 @@ jobs:
       - run: sccache --start-server
       - run: ./scripts/stage-demo-assets.sh
       - run: cargo test --workspace
-        env:
-          ZOLANA_TEST_KEYS: ${{ github.workspace }}/packages/spr_mobile/example/assets/proving
       - run: cargo test -p spr-mobile proves_a_client_request_with_the_pinned_key -- --ignored
         env:
           ZOLANA_TEST_KEY_DIR: ${{ github.workspace }}/.cache/proving

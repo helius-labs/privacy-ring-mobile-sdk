@@ -26,7 +26,7 @@ Validation commands:
 ```sh
 python3 scripts/sync-key-catalog.py --check
 bash scripts/stage-demo-assets.sh
-ZOLANA_TEST_KEYS=packages/spr_mobile/example/assets/proving cargo test --locked --workspace
+cargo test --locked --workspace
 ZOLANA_TEST_KEY_DIR=.cache/proving cargo test --locked -p spr-mobile proves_ -- --ignored
 ```
 

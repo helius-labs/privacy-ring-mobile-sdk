@@ -14,7 +14,6 @@ crate-type = ["lib", "cdylib", "staticlib"]
 # zopro's stage timings in the device log (the Device Farm bench).
 zopro-trace = ["zopro-spr/trace"]
 default = []
-flutter = ["dep:mopro-ffi", "mopro-ffi/flutter"]
 
 [dependencies]
 async-trait = "0.1"
@@ -24,7 +23,6 @@ http = "1"
 hex = "0.4"
 hmac = "0.12"
 bytemuck = "1"
-mopro-ffi = { git = "https://github.com/sergeytimoshin/mopro", rev = "c1071f96fa5a28dca8e567dd3944331047450a2b", optional = true }
 # Only its types: the wallet sends through the application's transport.
 reqwest = { version = "0.12", default-features = false }
 reqwest-middleware = "0.4"
@@ -75,11 +73,6 @@ base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 solana-keypair = "3"
 solana-signer = "3.0"
-
-[[bin]]
-name = "flutter"
-path = "src/bin/flutter.rs"
-required-features = ["flutter"]
 
 # The frb attribute macro leaves a `cfg(frb_expand)` behind.
 [lints.rust.unexpected_cfgs]

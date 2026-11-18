@@ -1,3 +1,0 @@
-build_mode = "release"
-target_adapters = ["gnark"]
-target_platforms = ["flutter"]
