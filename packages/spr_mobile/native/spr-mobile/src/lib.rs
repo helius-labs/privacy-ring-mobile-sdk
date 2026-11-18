@@ -1,12 +1,12 @@
-use std::{path::Path, time::Instant};
+use std::path::Path;
 
 use spr_hasher::{Hasher, Poseidon};
 
 mod activity;
 mod asset;
 mod error;
-mod keys;
 mod prover;
+mod proving_keys;
 mod transport;
 mod wallet;
 
@@ -15,8 +15,10 @@ pub use activity::{
 };
 pub use asset::MintConfig;
 pub use error::WalletError;
-pub use keys::{ProvingKeyProgress, ProvingKeyStatus, ProvingKeys, DEFAULT_PROVING_KEYS_URL};
 pub use prover::Proving;
+pub use proving_keys::{
+    ProvingKeyProgress, ProvingKeyStatus, ProvingKeys, DEFAULT_PROVING_KEYS_URL,
+};
 pub use transport::{
     ProverTeeNetwork, Transport, TransportFailure, TransportOutcome, TransportRequest,
     TransportResponse,
@@ -134,10 +136,6 @@ impl LocalProver {
     pub fn close(&self) {
         self.inner.close();
     }
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

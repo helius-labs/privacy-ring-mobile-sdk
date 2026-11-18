@@ -6,8 +6,8 @@ use super::{
 use crate::{
     asset::{Assets, MintConfig},
     error::WalletError,
-    keys::{KeyStore, ProvingKeys},
     prover::{NativeProver, Proving},
+    proving_keys::{key_store, ProvingKeys},
     transport::Transport,
 };
 use solana_pubkey::Pubkey;
@@ -212,7 +212,7 @@ impl MobileWallet {
             }
         };
         let proving_keys = Arc::new(
-            KeyStore::new(
+            key_store(
                 config.proving_key_dir,
                 config.proving_key_url,
                 transport.clone(),

@@ -1,10 +1,10 @@
 //! On-device proving with a shared, memory-bounded loaded-key slot.
 
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex, PoisonError,
+        Arc, Mutex, PoisonError,
     },
     time::Instant,
 };
@@ -14,8 +14,13 @@ use zeroize::Zeroizing;
 use image::load_key;
 
 mod image;
+mod keys;
 
-pub use image::image_path;
+use image::image_path;
+pub use keys::{
+    pinned_key, pinned_key_size, ExpectedKey, KeyDownload, KeyDownloadResponse, KeyStore,
+    KeyTransport, ProvingKeyProgress, ProvingKeyStatus, DEFAULT_PROVING_KEYS_URL,
+};
 
 /// Use this feature in the final binary to release large freed blocks to the
 /// OS on Apple targets. It installs the allocator for the whole process.
@@ -23,7 +28,7 @@ pub use image::image_path;
 #[global_allocator]
 static ALLOCATOR: zopro_spr::zopro_core::alloc::Allocator = zopro_spr::zopro_core::alloc::Allocator;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ProverError {
     #[error("the prover is busy")]
     Busy,
@@ -37,6 +42,18 @@ pub enum ProverError {
     UnsupportedCircuit,
     #[error("the proof failed")]
     ProofFailed,
+    #[error("the proving key catalog is invalid")]
+    KeyCatalogInvalid,
+    #[error("unknown proving key {name}")]
+    KeyUnknown { name: String },
+    #[error("the pinned digest does not match the expected proving key {name}")]
+    KeyMismatch { name: String },
+    #[error("could not download proving key {name}")]
+    KeyDownloadFailed { name: String },
+    #[error("proving key {name} does not match the pinned artifact")]
+    KeyCorrupt { name: String },
+    #[error("the proving key store could not access {path}")]
+    KeyStoreFailed { path: String },
 }
 
 static PREPARED: Mutex<ProverState> = Mutex::new(ProverState {
@@ -52,8 +69,8 @@ struct ProverState {
 
 struct Loaded {
     id: u64,
-    /// A reusable file path, or `None` for an exclusive [`LocalProver`].
-    path: Option<PathBuf>,
+    /// A pinned key identity, or `None` for an exclusive [`LocalProver`].
+    key: Option<ExpectedKey>,
     prover: zopro_spr::Prover,
 }
 
@@ -122,7 +139,7 @@ impl LocalProver {
         let prover = load_key(key_path)?;
         state.loaded = Some(Loaded {
             id,
-            path: None,
+            key: None,
             prover,
         });
         Ok(LocalProver {
@@ -195,27 +212,81 @@ impl Drop for LocalProver {
     }
 }
 
+/// A verified proof using a pinned key, with download and proving timings
+/// in milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvedRequest {
+    pub proof_json: String,
+    pub key: String,
+    pub downloaded_bytes: u64,
+    pub download_ms: u64,
+    pub load_ms: u64,
+    pub witness_ms: u64,
+    pub prove_ms: u64,
+    pub verify_ms: u64,
+    pub total_ms: u64,
+}
+
+/// Proves on-device with a key verified by a [`KeyStore`]. Keep this handle
+/// alive to reuse its loaded key. All instances share one loaded-key slot.
+pub struct ManagedProver {
+    keys: Arc<KeyStore>,
+    session: ProverSession,
+}
+
+impl ManagedProver {
+    pub fn new(keys: Arc<KeyStore>) -> Self {
+        Self {
+            keys,
+            session: ProverSession::default(),
+        }
+    }
+
+    /// The transport receives only artifact requests. The proof request stays
+    /// on the device. The prover verifies the proof before returning it.
+    pub fn prove(
+        &self,
+        request_json: &str,
+        key: &ExpectedKey,
+    ) -> Result<ProvedRequest, ProverError> {
+        let started = Instant::now();
+        let (path, downloaded_bytes) = self.keys.ensure(key)?;
+        let download_ms = elapsed_ms(started);
+        let (proof, load_ms) = self.session.prove(request_json, key, &path)?;
+        Ok(ProvedRequest {
+            proof_json: proof.proof_json,
+            key: key.name.clone(),
+            downloaded_bytes,
+            download_ms,
+            load_ms,
+            witness_ms: proof.witness_ms,
+            prove_ms: proof.proof_ms,
+            verify_ms: proof.verify_ms,
+            total_ms: elapsed_ms(started),
+        })
+    }
+}
+
 /// Reuses the process-wide slot for a series of proofs, switching keys as needed.
 /// Proving fails with [`ProverError::Busy`] while a [`LocalProver`] holds the slot.
 #[derive(Default)]
-pub struct ProverSession {
+struct ProverSession {
     loaded: AtomicU64,
 }
 
 impl ProverSession {
-    /// Prove with a trusted, immutable key file. Its path identifies the
-    /// reusable key. Returns the verified proof and time spent loading the key.
-    pub fn prove(
+    fn prove(
         &self,
         request_json: &str,
+        key: &ExpectedKey,
         key_path: &Path,
     ) -> Result<(LocalProofResult, u64), ProverError> {
         let started = Instant::now();
         let mut state = PREPARED.lock().map_err(|_| ProverError::Unavailable)?;
         let loading = Instant::now();
-        match state.loaded.as_ref().map(|loaded| loaded.path.as_deref()) {
+        match state.loaded.as_ref().map(|loaded| loaded.key.as_ref()) {
             Some(None) => return Err(ProverError::Busy),
-            Some(Some(path)) if path == key_path => {}
+            Some(Some(loaded_key)) if loaded_key == key => {}
             _ => {
                 // Free the old key before allocating memory for the new one.
                 state.loaded = None;
@@ -224,7 +295,7 @@ impl ProverSession {
                 self.loaded.store(id, Ordering::Relaxed);
                 state.loaded = Some(Loaded {
                     id,
-                    path: Some(key_path.to_path_buf()),
+                    key: Some(key.clone()),
                     prover,
                 });
             }

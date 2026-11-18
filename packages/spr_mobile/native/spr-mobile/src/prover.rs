@@ -1,12 +1,12 @@
 //! Where the wallet proves a spend: on the device with its own [`Prover`], or
 //! with the Zolana SDK's prover client through the application's transport.
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
-use spr_client::{prover::ExpectedProvingKey, ClientError, Proof, ProveRequest, Prover};
-use spr_local_prover::ProverSession;
+use spr_client::{ClientError, Proof, ProveRequest, Prover};
+use spr_local_prover::{ExpectedKey, ManagedProver};
 
-use crate::{elapsed_ms, error::WalletError, keys, ProvedRequest};
+use crate::{error::WalletError, proving_keys, ProvedRequest};
 
 /// Where a spend is proved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,12 +24,7 @@ pub enum Proving {
 /// that key into the shared slot when it changes. Request bodies carry
 /// nullifier secrets and never leave the process. Clones share one prover.
 #[derive(Clone)]
-pub(crate) struct NativeProver(Arc<Native>);
-
-struct Native {
-    keys: Arc<keys::KeyStore>,
-    session: ProverSession,
-}
+pub(crate) struct NativeProver(Arc<ManagedProver>);
 
 /// Why a proof on the device failed, carried through the client as
 /// [`ClientError::ProverFailed`] and read back as the [`WalletError`] it is.
@@ -45,38 +40,26 @@ impl std::fmt::Display for DeviceProverFailure {
 impl std::error::Error for DeviceProverFailure {}
 
 impl NativeProver {
-    pub(crate) fn new(keys: Arc<keys::KeyStore>) -> Self {
-        Self(Arc::new(Native {
-            keys,
-            session: ProverSession::default(),
-        }))
+    pub(crate) fn new(keys: Arc<proving_keys::KeyStore>) -> Self {
+        Self(Arc::new(ManagedProver::new(keys)))
     }
 
-    fn prove_json(&self, body: &str, key: &ExpectedProvingKey) -> Result<String, WalletError> {
-        Ok(self.prove_request(body, key)?.proof_json)
-    }
-
-    /// Prove `body` with `key`, fetched and loaded as needed, and say where
-    /// the time went. The proof is verified before it leaves.
     pub(crate) fn prove_request(
         &self,
         body: &str,
-        key: &ExpectedProvingKey,
+        key: &ExpectedKey,
     ) -> Result<ProvedRequest, WalletError> {
-        let started = Instant::now();
-        let (path, downloaded_bytes) = self.0.keys.ensure(key)?;
-        let download_ms = elapsed_ms(started);
-        let (proof, load_ms) = self.0.session.prove(body, &path)?;
+        let proof = self.0.prove(body, key)?;
         Ok(ProvedRequest {
             proof_json: proof.proof_json,
-            key: key.name.clone(),
-            downloaded_bytes,
-            download_ms,
-            load_ms,
+            key: proof.key,
+            downloaded_bytes: proof.downloaded_bytes,
+            download_ms: proof.download_ms,
+            load_ms: proof.load_ms,
             witness_ms: proof.witness_ms,
-            prove_ms: proof.proof_ms,
+            prove_ms: proof.prove_ms,
             verify_ms: proof.verify_ms,
-            total_ms: elapsed_ms(started),
+            total_ms: proof.total_ms,
         })
     }
 }
@@ -85,11 +68,17 @@ impl NativeProver {
 impl Prover for NativeProver {
     fn prove(&self, request: &dyn ProveRequest) -> Result<Proof, ClientError> {
         let body = request.body()?;
-        let key = request.proving_key()?;
-        let proof_json = self
-            .prove_json(&body, &key)
+        let expected = request.proving_key()?;
+        let key = ExpectedKey {
+            name: expected.name,
+            sha256: expected.sha256,
+        };
+        let proof = self
+            .0
+            .prove(&body, &key)
+            .map_err(WalletError::from)
             .map_err(|failure| ClientError::ProverFailed(Box::new(DeviceProverFailure(failure))))?;
-        Proof::from_gnark_json(&proof_json)
+        Proof::from_gnark_json(&proof.proof_json)
     }
 }
 
@@ -102,9 +91,10 @@ mod tests {
 
     use solana_address::Address;
     use spr_client::{
-        assemble, prover::verify_proof_statement, AssembledTransfer, Delivery, MerkleContext,
-        MerkleProof, NonInclusionProof, ProverClient, SpendProof, NULLIFIER_TREE_HEIGHT,
-        STATE_TREE_HEIGHT,
+        assemble,
+        prover::{verify_proof_statement, ExpectedProvingKey},
+        AssembledTransfer, Delivery, MerkleContext, MerkleProof, NonInclusionProof, ProverClient,
+        SpendProof, NULLIFIER_TREE_HEIGHT, STATE_TREE_HEIGHT,
     };
     use spr_interface::{pda, verifying_keys::CircuitId, N_PUBLIC_SLOTS};
     use spr_keypair::ShieldedKeypair;
@@ -116,7 +106,7 @@ mod tests {
 
     use super::*;
     use crate::transport::{
-        tests::{fake, ok, Requests},
+        tests::{fake, ok, refused, Requests},
         TransportFailure, TransportRequest, TransportResponse,
     };
 
@@ -468,11 +458,8 @@ mod tests {
     fn a_device_failure_reaches_the_wallet_as_itself() {
         let dir =
             std::env::temp_dir().join(format!("zolana-mobile-unreachable-{}", std::process::id()));
-        let prover = NativeProver::new(Arc::new(keys::KeyStore::new(
-            dir.display().to_string(),
-            None,
-            crate::transport::tests::unreachable(),
-        )));
+        let (transport, requests) = fake(|_| refused("fixture host unavailable".into()));
+        let prover = NativeProver::new(Arc::new(proving_keys::key_store(&dir, None, transport)));
         let failure = prover.prove(&Captured(transfer_2_2_key())).unwrap_err();
         assert!(
             matches!(failure, ClientError::ProverFailed(_)),
@@ -484,6 +471,21 @@ mod tests {
                 name: "transfer_confidential_2_2.key".to_string()
             }
         );
+        let requests = requests.lock().unwrap();
+        let [request] = requests.as_slice() else {
+            panic!("expected one proving-key download request");
+        };
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.headers["range"], "bytes=0-8388607");
+        assert!(request.body.is_empty());
+        assert_eq!(
+            request.max_response_bytes.map(u64::from),
+            Some(spr_local_prover::pinned_key_size("transfer_confidential_2_2.key").unwrap())
+        );
+        assert!(request
+            .download_path
+            .as_ref()
+            .is_some_and(|path| path.ends_with(".zopro.part")));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -498,16 +500,21 @@ mod tests {
                 .display()
                 .to_string()
         });
-        let prover = NativeProver::new(Arc::new(keys::KeyStore::new(
+        let store = Arc::new(proving_keys::key_store(
             dir,
             None,
             crate::transport::tests::unreachable(),
-        )));
+        ));
+        let prover = NativeProver::new(Arc::clone(&store));
         let key = transfer_2_2_key();
-        let path = prover.0.keys.ensure(&key).unwrap().0;
+        let expected = ExpectedKey {
+            name: key.name.clone(),
+            sha256: key.sha256,
+        };
+        let path = store.ensure(&expected).unwrap().0;
         let standalone = crate::LocalProver::load(path.display().to_string()).unwrap();
         assert!(matches!(
-            prover.prove_request(REQUEST, &key),
+            prover.prove_request(REQUEST, &expected),
             Err(WalletError::ProverBusy)
         ));
         standalone.close();
@@ -518,9 +525,6 @@ mod tests {
             proof.commitment.is_none(),
             "the eddsa rail has no BSB22 commitment"
         );
-        // The key's image is beside it for the next session.
-        let image = spr_local_prover::image_path(&path);
-        assert!(image.is_file(), "{}", image.display());
         // The same key serves the next proof without reloading.
         prover.prove(&Captured(transfer_2_2_key())).unwrap();
     }
@@ -538,7 +542,7 @@ mod tests {
                 .display()
                 .to_string()
         });
-        let store = Arc::new(keys::KeyStore::new(
+        let store = Arc::new(proving_keys::key_store(
             dir,
             None,
             crate::transport::tests::unreachable(),
@@ -572,7 +576,7 @@ mod tests {
             let proof: serde_json::Value = serde_json::from_str(&result.proof_json).unwrap();
             assert_eq!(
                 proof["provingKeySha256"].as_str(),
-                keys::key_sha256(&key),
+                Some(hex::encode(spr_local_prover::pinned_key(&key).unwrap().sha256).as_str()),
                 "{name}"
             );
             println!(

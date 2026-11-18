@@ -25,8 +25,8 @@
 
 use crate::{
     asset::Assets,
-    keys::KeyStore,
     prover::{NativeProver, Proving},
+    proving_keys::KeyStore,
 };
 use balance::RecentRead;
 use prepared::Reservations;

@@ -22,9 +22,10 @@ notes and pending transactions require their matching SDK and deployment.
 ## Layout
 
 - `packages/spr_mobile/native/spr-mobile`: the native wallet, the
-  protocol-client adapters and the proving-key store.
+  protocol-client adapters.
 - `packages/spr_mobile/native/spr-local-prover`: the standalone Rust crate for
-  on-device proving with zopro and one loaded key per process.
+  on-device proving with zopro, pinned proving keys, and one loaded key per
+  process.
 - `packages/spr_mobile`: the Flutter plugin, and an example devnet wallet.
 - `fixtures`: a 2→2 `/prove` request built with the Zolana prover's test
   helpers, and the Helius prover's response to it.
@@ -33,6 +34,20 @@ notes and pending transactions require their matching SDK and deployment.
 The generated native library keeps Mopro's internal
 `mopro_flutter_bindings` stem. Applications import the public Dart package as
 `package:spr_mobile/spr_mobile.dart`.
+
+## Standalone local proving
+
+Rust applications that already have a Zolana `/prove` request can use
+[`spr-local-prover`](packages/spr_mobile/native/spr-local-prover) as a Cargo
+dependency. Give `ManagedProver` a `KeyStore` configured with an app cache
+directory and a ranged GET transport for proving-key artifacts. Pass the
+expected key name and source digest from the protocol request. The proof
+request stays in the process, and the SDK verifies the proof before returning
+it. Use `LocalProver::load` with a trusted key file for offline proving.
+
+The [standalone consumer](scripts/consumer_fixture/local_prover.rs) uses the
+2→2 fixture. Run it outside the workspace with
+`bash scripts/test-local-prover-consumer.sh` after staging the demo assets.
 
 ## Demo
 

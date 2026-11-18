@@ -15,7 +15,11 @@ zopro-trace = ["zopro-spr/trace"]
 zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8" }
 log = "0.4"
 memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
+url = "2"
 zeroize = "1.9"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]

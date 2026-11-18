@@ -363,6 +363,12 @@ impl From<spr_local_prover::ProverError> for WalletError {
             ProverError::LoadFailed => Self::ProverLoadFailed,
             ProverError::UnsupportedCircuit => Self::UnsupportedCircuit,
             ProverError::ProofFailed => Self::ProofFailed,
+            ProverError::KeyCatalogInvalid => Self::ProvingKeyCatalogInvalid,
+            ProverError::KeyUnknown { name } => Self::ProvingKeyUnknown { name },
+            ProverError::KeyMismatch { name } => Self::ProvingKeyMismatch { name },
+            ProverError::KeyDownloadFailed { name } => Self::ProvingKeyDownloadFailed { name },
+            ProverError::KeyCorrupt { name } => Self::ProvingKeyCorrupt { name },
+            ProverError::KeyStoreFailed { path } => Self::ProvingKeyStoreFailed { path },
         }
     }
 }

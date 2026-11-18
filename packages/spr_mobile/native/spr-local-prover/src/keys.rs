@@ -10,7 +10,7 @@
 //! survive unrelated additions to the gnark catalog.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
@@ -18,17 +18,38 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use flutter_rust_bridge::DartFnFuture;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use spr_client::prover::ExpectedProvingKey;
-use spr_transaction::instructions::{merge::merge_circuit_width, transact::canonical_shape};
-use zeroize::Zeroizing;
 
-use crate::error::WalletError;
-use crate::prover::NativeProver;
-use crate::transport::{Transport, TransportRequest};
-use crate::ProvedRequest;
+use crate::{image_path, ProverError};
+
+/// A proving key identity obtained from the protocol request or a pinned fixture.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpectedKey {
+    pub name: String,
+    /// SHA-256 of the original gnark key, as identified by the verifying key.
+    pub sha256: [u8; 32],
+}
+
+/// A ranged GET for a proving-key artifact. The transport may write its
+/// response body to `destination` or return the bytes in [`KeyDownloadResponse`].
+#[derive(Clone, Debug)]
+pub struct KeyDownload {
+    pub url: String,
+    pub range: std::ops::RangeInclusive<u64>,
+    pub max_response_bytes: Option<u32>,
+    pub destination: PathBuf,
+}
+
+/// An HTTP response for a proving-key artifact.
+pub struct KeyDownloadResponse {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+/// Downloads proving-key artifacts. Calls can overlap for different keys.
+pub type KeyTransport = Arc<dyn Fn(KeyDownload) -> io::Result<KeyDownloadResponse> + Send + Sync>;
 
 /// The upstream prover's default key host.
 pub const DEFAULT_PROVING_KEYS_URL: &str = "https://d3gbdb0egjwcw9.cloudfront.net";
@@ -100,14 +121,14 @@ struct DownloadArtifact {
 fn catalog_urls(
     json: &str,
     pins: &HashMap<String, LockEntry>,
-) -> Result<HashMap<String, String>, WalletError> {
+) -> Result<HashMap<String, String>, ProverError> {
     let catalog: DownloadCatalog =
-        serde_json::from_str(json).map_err(|_| WalletError::ProvingKeyCatalogInvalid)?;
+        serde_json::from_str(json).map_err(|_| ProverError::KeyCatalogInvalid)?;
     let mut seen = HashSet::new();
     let mut urls = HashMap::new();
     for key in catalog.keys {
         if !seen.insert(key.name.clone()) {
-            return Err(WalletError::ProvingKeyCatalogInvalid);
+            return Err(ProverError::KeyCatalogInvalid);
         }
         let Some(pin) = pins.get(&key.name) else {
             continue;
@@ -123,19 +144,18 @@ fn catalog_urls(
             .filter(|a| a.format == "zopro")
             .collect();
         if gnark.len() != 1 || zopro.len() > 1 {
-            return Err(WalletError::ProvingKeyCatalogInvalid);
+            return Err(ProverError::KeyCatalogInvalid);
         }
         if gnark[0].sha256 != pin.key_sha256 {
-            return Err(WalletError::ProvingKeyMismatch { name: key.name });
+            return Err(ProverError::KeyMismatch { name: key.name });
         }
         let Some(artifact) = zopro.first() else {
             continue;
         };
         if artifact.sha256 != pin.sha256 || artifact.size != pin.size {
-            return Err(WalletError::ProvingKeyMismatch { name: key.name });
+            return Err(ProverError::KeyMismatch { name: key.name });
         }
-        let url = reqwest::Url::parse(&artifact.url)
-            .map_err(|_| WalletError::ProvingKeyCatalogInvalid)?;
+        let url = url::Url::parse(&artifact.url).map_err(|_| ProverError::KeyCatalogInvalid)?;
         let loopback = url.host_str().is_some_and(|host| {
             matches!(host, "localhost" | "127.0.0.1" | "[::1]") || host.ends_with(".localhost")
         });
@@ -144,7 +164,7 @@ fn catalog_urls(
             || url.password().is_some()
             || url.fragment().is_some()
         {
-            return Err(WalletError::ProvingKeyCatalogInvalid);
+            return Err(ProverError::KeyCatalogInvalid);
         }
         urls.insert(key.name, url.to_string());
     }
@@ -169,9 +189,8 @@ fn key_set() -> &'static str {
     prefix.rsplit('/').next().unwrap_or(prefix)
 }
 
-/// A key this wallet proves with on the device: a confidential transfer or a
-/// merge. The lockfile also pins ring and custom-ring keys it never loads.
-fn is_wallet_key(name: &str) -> bool {
+/// A key currently supported for on-device transfers or merges.
+fn is_local_key(name: &str) -> bool {
     name.strip_prefix("transfer_confidential_")
         .and_then(|shape| shape.strip_suffix(".key"))
         .and_then(|shape| shape.split_once('_'))
@@ -181,7 +200,7 @@ fn is_wallet_key(name: &str) -> bool {
         || (name.starts_with("merge_") && name.ends_with("_1.key") && !name.contains("ring"))
 }
 
-/// A proving key of the wallet and how much of it is on the device.
+/// A pinned proving key and how much of it is on the device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProvingKeyStatus {
     pub name: String,
@@ -192,7 +211,7 @@ pub struct ProvingKeyStatus {
     pub downloaded: u64,
 }
 
-/// Where a [`ProvingKeys::prefetch`] is.
+/// Progress of [`KeyStore::prefetch`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProvingKeyProgress {
     /// The key downloading now.
@@ -208,119 +227,13 @@ pub struct ProvingKeyProgress {
     pub total: u64,
 }
 
-/// The wallet's proving keys: which are on the device, a download ahead of
-/// the first proof that needs them, and their removal. It works beside the
-/// wallet's other calls: a proof that needs a key a prefetch is downloading
-/// waits for that download instead of starting its own.
-pub struct ProvingKeys {
-    pub(crate) store: Arc<KeyStore>,
-    /// The wallet's own prover, so that a key it loaded stays loaded.
-    pub(crate) prover: NativeProver,
-}
-
-impl ProvingKeys {
-    /// Every key the wallet can prove with on the device, smallest first.
-    pub fn status(&self) -> Vec<ProvingKeyStatus> {
-        self.store.status()
-    }
-
-    /// The keys spends of up to `max_inputs` notes with `outputs` outputs,
-    /// and merges of up to `max_merge_inputs` notes, prove with, smallest
-    /// first. A transfer has two outputs, the payment and the change; a
-    /// withdrawal pads its change to two.
-    pub fn needed(
-        &self,
-        max_inputs: u32,
-        outputs: Vec<u32>,
-        max_merge_inputs: u32,
-    ) -> Result<Vec<String>, WalletError> {
-        let mut names = BTreeSet::new();
-        for n_in in 1..=max_inputs as usize {
-            for &n_out in &outputs {
-                let shape = canonical_shape(n_in, n_out as usize).map_err(|_| {
-                    WalletError::ProvingKeyUnknown {
-                        name: format!("transfer_confidential_{n_in}_{n_out}.key"),
-                    }
-                })?;
-                names.insert(format!(
-                    "transfer_confidential_{}_{}.key",
-                    shape.n_inputs(),
-                    shape.n_outputs()
-                ));
-            }
-        }
-        for count in 2..=max_merge_inputs as usize {
-            let width = merge_circuit_width(count).ok_or(WalletError::ProvingKeyUnknown {
-                name: format!("merge_{count}_1.key"),
-            })?;
-            names.insert(format!("merge_{width}_1.key"));
-        }
-        let mut names: Vec<String> = names.into_iter().collect();
-        for name in &names {
-            entry(name)?;
-        }
-        names.sort_by_key(|name| artifacts().keys[name].size);
-        Ok(names)
-    }
-
-    /// Download `names` (see [`Self::needed`]) that are not on the device,
-    /// each checked against the lockfile. `progress` hears of every part, and
-    /// stops the prefetch by answering `false`; what it downloaded stays, and
-    /// the next download of that key resumes from it. Returns whether every
-    /// key is on the device.
-    pub fn prefetch(
-        &self,
-        names: Vec<String>,
-        progress: impl Fn(ProvingKeyProgress) -> DartFnFuture<bool> + Send + Sync + 'static,
-    ) -> Result<bool, WalletError> {
-        let keys = names
-            .iter()
-            .map(|name| Ok((name.as_str(), entry(name)?)))
-            .collect::<Result<Vec<_>, WalletError>>()?;
-        self.store.prefetch(&keys, |update| {
-            futures_executor::block_on(progress(update.clone()))
-        })
-    }
-
-    /// Remove the keys and partial downloads from the device. A prefetch or
-    /// proof that is downloading a key finishes its part first.
-    pub fn clear(&self) -> Result<(), WalletError> {
-        self.store.clear()
-    }
-
-    /// Prove `request_json`, a Zolana `/prove` request, with the pinned key
-    /// `key_name` (such as `transfer_confidential_1_2.key`), as the wallet
-    /// proves a spend: the key downloads when it is not on the device, loads
-    /// when it is not the loaded one, and the proof is verified. The result
-    /// says where the time went, so an application can time proofs on a
-    /// device with a fixed request. One proof at a time with the wallet's
-    /// own; a `LocalProver` loaded meanwhile fails it with `prover_busy`.
-    pub fn prove(
-        &self,
-        key_name: String,
-        request_json: String,
-    ) -> Result<ProvedRequest, WalletError> {
-        let request_json = Zeroizing::new(request_json);
-        let sha256 = sha256_bytes(&entry(&key_name)?.key_sha256).ok_or_else(|| {
-            WalletError::ProvingKeyUnknown {
-                name: key_name.clone(),
-            }
-        })?;
-        let key = ExpectedProvingKey {
-            name: key_name,
-            sha256,
-        };
-        self.prover.prove_request(&request_json, &key)
-    }
-}
-
 /// Downloads and verifies proving keys into one directory.
 pub struct KeyStore {
     /// This lockfile's key set under the configured directory.
     dir: PathBuf,
     base_url: Option<String>,
     catalog_urls: Option<HashMap<String, String>>,
-    transport: Transport,
+    transport: KeyTransport,
     /// [`PART`] outside tests.
     part: u64,
     shared: Arc<Shared>,
@@ -351,7 +264,11 @@ fn shared(dir: &Path) -> Arc<Shared> {
 impl KeyStore {
     /// The keys of this lockfile under `root`. Removes the key sets of other
     /// lockfiles there.
-    pub fn new(root: impl Into<PathBuf>, base_url: Option<String>, transport: Transport) -> Self {
+    pub fn new(
+        root: impl Into<PathBuf>,
+        base_url: Option<String>,
+        transport: KeyTransport,
+    ) -> Self {
         let root = root.into();
         prune(&root);
         let dir = root.join(key_set());
@@ -366,22 +283,22 @@ impl KeyStore {
     }
 
     /// A catalog only supplies locations for the already pinned conversions.
-    pub(crate) fn with_catalog(mut self, json: Option<&str>) -> Result<Self, WalletError> {
+    pub fn with_catalog(mut self, json: Option<&str>) -> Result<Self, ProverError> {
         if let Some(json) = json {
             if self.base_url.is_some() {
-                return Err(WalletError::ProvingKeyCatalogInvalid);
+                return Err(ProverError::KeyCatalogInvalid);
             }
             self.catalog_urls = Some(catalog_urls(json, &artifacts().keys)?);
         }
         Ok(self)
     }
 
-    fn download_url(&self, name: &str, entry: &LockEntry) -> Result<String, WalletError> {
+    fn download_url(&self, name: &str, entry: &LockEntry) -> Result<String, ProverError> {
         match &self.catalog_urls {
             Some(urls) => urls
                 .get(name)
                 .cloned()
-                .ok_or_else(|| WalletError::ProvingKeyUnknown { name: name.into() }),
+                .ok_or_else(|| ProverError::KeyUnknown { name: name.into() }),
             None => Ok(format!(
                 "{}/{}/{}",
                 self.base_url.as_deref().unwrap_or(DEFAULT_PROVING_KEYS_URL),
@@ -396,25 +313,26 @@ impl KeyStore {
     /// client expects, the one next to the on-chain verifying key.
     /// Also says how many bytes it downloaded: what the device lacked of
     /// the key.
-    pub fn ensure(&self, key: &ExpectedProvingKey) -> Result<(PathBuf, u64), WalletError> {
+    pub fn ensure(&self, key: &ExpectedKey) -> Result<(PathBuf, u64), ProverError> {
         let name = key.name.as_str();
         let entry = entry(name)?;
         self.download_url(name, entry)?;
         if entry.key_sha256 != hex(&key.sha256) {
-            return Err(WalletError::ProvingKeyMismatch { name: name.into() });
+            return Err(ProverError::KeyMismatch { name: name.into() });
         }
         let on_device = self.on_disk(name, entry);
         let path = self
             .fetch(name, entry, &mut |_| true)?
-            .ok_or_else(|| WalletError::ProvingKeyDownloadFailed { name: name.into() })?;
+            .ok_or_else(|| ProverError::KeyDownloadFailed { name: name.into() })?;
         Ok((path, entry.size - on_device))
     }
 
-    fn status(&self) -> Vec<ProvingKeyStatus> {
+    /// The on-device keys and how much of each is cached.
+    pub fn status(&self) -> Vec<ProvingKeyStatus> {
         let mut keys: Vec<ProvingKeyStatus> = lockfile()
             .keys
             .iter()
-            .filter(|(name, _)| is_wallet_key(name))
+            .filter(|(name, _)| is_local_key(name))
             .filter(|(name, _)| {
                 self.catalog_urls
                     .as_ref()
@@ -451,11 +369,25 @@ impl KeyStore {
         }
     }
 
-    fn prefetch(
+    /// Download the named keys. Returning false from `progress` stops the
+    /// prefetch and keeps the downloaded parts for a later call.
+    pub fn prefetch(
+        &self,
+        names: &[String],
+        progress: impl FnMut(&ProvingKeyProgress) -> bool,
+    ) -> Result<bool, ProverError> {
+        let keys = names
+            .iter()
+            .map(|name| Ok((name.as_str(), entry(name)?)))
+            .collect::<Result<Vec<_>, ProverError>>()?;
+        self.prefetch_entries(&keys, progress)
+    }
+
+    fn prefetch_entries(
         &self,
         keys: &[(&str, &LockEntry)],
         mut progress: impl FnMut(&ProvingKeyProgress) -> bool,
-    ) -> Result<bool, WalletError> {
+    ) -> Result<bool, ProverError> {
         let mut pending = Vec::new();
         for &(name, entry) in keys {
             self.download_url(name, entry)?;
@@ -497,7 +429,8 @@ impl KeyStore {
         Ok(true)
     }
 
-    fn clear(&self) -> Result<(), WalletError> {
+    /// Clear the files and partial downloads of this pinned set.
+    pub fn clear(&self) -> Result<(), ProverError> {
         let _files = self
             .shared
             .files
@@ -529,7 +462,7 @@ impl KeyStore {
         name: &str,
         entry: &LockEntry,
         progress: &mut dyn FnMut(u64) -> bool,
-    ) -> Result<Option<PathBuf>, WalletError> {
+    ) -> Result<Option<PathBuf>, ProverError> {
         let _files = self
             .shared
             .files
@@ -551,7 +484,7 @@ impl KeyStore {
         if !matches_entry(name, &path, entry)? {
             // A key that is replaced takes its image with it.
             let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(spr_local_prover::image_path(&path));
+            let _ = fs::remove_file(image_path(&path));
             self.create_dir()?;
             if !self.download(name, entry, &path, progress)? {
                 return Ok(None);
@@ -570,7 +503,7 @@ impl KeyStore {
         Some(path)
     }
 
-    fn create_dir(&self) -> Result<(), WalletError> {
+    fn create_dir(&self) -> Result<(), ProverError> {
         fs::create_dir_all(&self.dir).map_err(|_| store_failed(&self.dir))?;
         let marker = self.dir.join(SET_MARKER);
         if !marker.exists() {
@@ -590,10 +523,10 @@ impl KeyStore {
         entry: &LockEntry,
         path: &Path,
         progress: &mut dyn FnMut(u64) -> bool,
-    ) -> Result<bool, WalletError> {
+    ) -> Result<bool, ProverError> {
         let partial = partial(path);
         let part = sidecar(path, "part");
-        let failed = || WalletError::ProvingKeyDownloadFailed { name: name.into() };
+        let failed = || ProverError::KeyDownloadFailed { name: name.into() };
         let mut offset = fs::metadata(&partial).map_or(0, |m| m.len());
         if offset > entry.size {
             fs::remove_file(&partial).map_err(|_| store_failed(path))?;
@@ -605,28 +538,19 @@ impl KeyStore {
             }
             let end = (offset + self.part).min(entry.size) - 1;
             let _ = fs::remove_file(&part);
-            let response = self
-                .transport
-                .send_blocking(TransportRequest {
-                    method: "GET".to_string(),
-                    url: self.download_url(name, entry)?,
-                    headers: HashMap::from([(
-                        "range".to_string(),
-                        format!("bytes={offset}-{end}"),
-                    )]),
-                    body: Vec::new(),
-                    // A host without ranges answers the first part with the
-                    // whole key.
-                    max_response_bytes: u32::try_from(if offset == 0 {
-                        entry.size
-                    } else {
-                        end + 1 - offset
-                    })
-                    .ok(),
-                    timeout_ms: None,
-                    download_path: Some(part.display().to_string()),
+            let response = (self.transport)(KeyDownload {
+                url: self.download_url(name, entry)?,
+                range: offset..=end,
+                // A host without ranges answers the first part with the whole key.
+                max_response_bytes: u32::try_from(if offset == 0 {
+                    entry.size
+                } else {
+                    end + 1 - offset
                 })
-                .map_err(|_| failed());
+                .ok(),
+                destination: part.clone(),
+            })
+            .map_err(|_| failed());
             let appended = response.and_then(|response| {
                 // A transport that returned the body instead of writing the file.
                 if !response.body.is_empty() || !part.exists() {
@@ -653,7 +577,7 @@ impl KeyStore {
             let _ = fs::remove_file(&partial);
             return Err(digest
                 .err()
-                .unwrap_or(WalletError::ProvingKeyCorrupt { name: name.into() }));
+                .unwrap_or(ProverError::KeyCorrupt { name: name.into() }));
         }
         file.sync_all().map_err(|_| store_failed(path))?;
         fs::rename(&partial, path).map_err(|_| store_failed(path))?;
@@ -661,21 +585,29 @@ impl KeyStore {
     }
 }
 
-/// The gnark key digest a proof with `name`'s zopro key reports.
-#[cfg(test)]
-pub(crate) fn key_sha256(name: &str) -> Option<&'static str> {
-    artifacts()
-        .keys
-        .get(name)
-        .map(|entry| entry.key_sha256.as_str())
+/// Resolve a pinned key for callers working with a known request fixture.
+/// Transaction clients should pass the expected digest from their protocol request.
+pub fn pinned_key(name: &str) -> Result<ExpectedKey, ProverError> {
+    let digest = &entry(name)?.key_sha256;
+    let sha256 =
+        sha256_bytes(digest).ok_or_else(|| ProverError::KeyUnknown { name: name.into() })?;
+    Ok(ExpectedKey {
+        name: name.into(),
+        sha256,
+    })
+}
+
+/// Size in bytes of the pinned zopro artifact.
+pub fn pinned_key_size(name: &str) -> Result<u64, ProverError> {
+    Ok(entry(name)?.size)
 }
 
 /// The zopro key of gnark key `name`: unknown until one is built.
-fn entry(name: &str) -> Result<&'static LockEntry, WalletError> {
+fn entry(name: &str) -> Result<&'static LockEntry, ProverError> {
     artifacts()
         .keys
         .get(name)
-        .ok_or_else(|| WalletError::ProvingKeyUnknown { name: name.into() })
+        .ok_or_else(|| ProverError::KeyUnknown { name: name.into() })
 }
 
 fn partial(path: &Path) -> PathBuf {
@@ -777,7 +709,7 @@ impl Verified {
 }
 
 /// Whether the file of key `name` at `path` exists and hashes to `entry`.
-fn matches_entry(name: &str, path: &Path, entry: &LockEntry) -> Result<bool, WalletError> {
+fn matches_entry(name: &str, path: &Path, entry: &LockEntry) -> Result<bool, ProverError> {
     let Ok(mut file) = File::open(path) else {
         return Ok(false);
     };
@@ -795,8 +727,8 @@ fn copy_bounded(
     size: u64,
     name: &str,
     path: &Path,
-) -> Result<String, WalletError> {
-    let corrupt = || WalletError::ProvingKeyCorrupt { name: name.into() };
+) -> Result<String, ProverError> {
+    let corrupt = || ProverError::KeyCorrupt { name: name.into() };
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 1 << 20];
     let mut copied = 0u64;
@@ -819,8 +751,8 @@ fn copy_bounded(
     Ok(hex(&hasher.finalize()))
 }
 
-fn store_failed(path: &Path) -> WalletError {
-    WalletError::ProvingKeyStoreFailed {
+fn store_failed(path: &Path) -> ProverError {
+    ProverError::KeyStoreFailed {
         path: path.display().to_string(),
     }
 }
@@ -838,21 +770,23 @@ mod tests {
     };
 
     use super::*;
-    use crate::transport::tests::{fake, refused, unreachable, Requests};
+    type Requests = Arc<Mutex<Vec<KeyDownload>>>;
 
-    fn needed(
-        max_inputs: u32,
-        outputs: Vec<u32>,
-        max_merge_inputs: u32,
-    ) -> Result<Vec<String>, WalletError> {
-        let store = Arc::new(KeyStore::new(scratch("needed"), None, unreachable()));
-        ProvingKeys {
-            prover: NativeProver::new(Arc::clone(&store)),
-            store,
-        }
-        .needed(max_inputs, outputs, max_merge_inputs)
+    fn unreachable() -> KeyTransport {
+        Arc::new(|_| Err(io::Error::other("unexpected download")))
     }
-    use crate::{TransportFailure, TransportResponse};
+
+    fn fake(
+        answer: impl Fn(&KeyDownload) -> io::Result<KeyDownloadResponse> + Send + Sync + 'static,
+    ) -> (KeyTransport, Requests) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let transport = Arc::new(move |request: KeyDownload| {
+            recorded.lock().unwrap().push(request.clone());
+            answer(&request)
+        });
+        (transport, requests)
+    }
 
     /// A fresh directory for one test.
     fn scratch(test: &str) -> PathBuf {
@@ -905,7 +839,6 @@ mod tests {
                 request.url,
                 "https://mirror.example/old-prefix/key.bin?version=pinned"
             );
-            assert_eq!(request.method, "GET");
         }
         let _ = fs::remove_dir_all(root);
     }
@@ -923,7 +856,7 @@ mod tests {
             bad["keys"][0]["artifacts"][index][field] = value;
             assert_eq!(
                 catalog_urls(&bad.to_string(), &pins),
-                Err(WalletError::ProvingKeyMismatch {
+                Err(ProverError::KeyMismatch {
                     name: "k.key".into()
                 })
             );
@@ -948,7 +881,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.download_url("k.key", &entry),
-            Err(WalletError::ProvingKeyUnknown {
+            Err(ProverError::KeyUnknown {
                 name: "k.key".into()
             })
         );
@@ -957,8 +890,8 @@ mod tests {
         fs::write(&path, bytes).unwrap();
         Verified::record(&path, &entry);
         assert_eq!(
-            store.prefetch(&[("k.key", &entry)], |_| true),
-            Err(WalletError::ProvingKeyUnknown {
+            store.prefetch_entries(&[("k.key", &entry)], |_| true),
+            Err(ProverError::KeyUnknown {
                 name: "k.key".into()
             })
         );
@@ -983,7 +916,7 @@ mod tests {
                 .push(duplicate);
             assert_eq!(
                 catalog_urls(&value.to_string(), &pins),
-                Err(WalletError::ProvingKeyCatalogInvalid)
+                Err(ProverError::KeyCatalogInvalid)
             );
         }
         let mut value = catalog("k.key", &entry);
@@ -991,7 +924,7 @@ mod tests {
         value["keys"].as_array_mut().unwrap().push(duplicate);
         assert_eq!(
             catalog_urls(&value.to_string(), &pins),
-            Err(WalletError::ProvingKeyCatalogInvalid)
+            Err(ProverError::KeyCatalogInvalid)
         );
         for url in [
             "/relative/key",
@@ -1004,12 +937,12 @@ mod tests {
             value["keys"][0]["artifacts"][1]["url"] = url.into();
             assert_eq!(
                 catalog_urls(&value.to_string(), &pins),
-                Err(WalletError::ProvingKeyCatalogInvalid)
+                Err(ProverError::KeyCatalogInvalid)
             );
         }
     }
 
-    fn store(root: &Path, transport: Transport) -> KeyStore {
+    fn store(root: &Path, transport: KeyTransport) -> KeyStore {
         KeyStore {
             part: 30,
             ..KeyStore::new(root, None, transport)
@@ -1021,28 +954,17 @@ mod tests {
     /// replace the answer to the request of that index.
     fn host(
         data: Vec<u8>,
-        answer: impl Fn(usize) -> Option<Result<TransportResponse, TransportFailure>>
-            + Send
-            + Sync
-            + 'static,
-    ) -> (Transport, Requests) {
+        answer: impl Fn(usize) -> Option<Result<KeyDownloadResponse, io::Error>> + Send + Sync + 'static,
+    ) -> (KeyTransport, Requests) {
         let count = AtomicUsize::new(0);
         fake(move |request| {
             if let Some(answer) = answer(count.fetch_add(1, Ordering::SeqCst)) {
                 return answer;
             }
-            let (start, end) = request.headers["range"]
-                .strip_prefix("bytes=")
-                .and_then(|range| range.split_once('-'))
-                .map(|(start, end)| {
-                    (
-                        start.parse::<usize>().unwrap(),
-                        end.parse::<usize>().unwrap(),
-                    )
-                })
-                .unwrap();
-            fs::write(request.download_path.as_ref().unwrap(), &data[start..=end]).unwrap();
-            Ok(TransportResponse {
+            let start = *request.range.start() as usize;
+            let end = *request.range.end() as usize;
+            fs::write(&request.destination, &data[start..=end]).unwrap();
+            Ok(KeyDownloadResponse {
                 status: 206,
                 headers: HashMap::from([(
                     "content-range".to_string(),
@@ -1058,20 +980,8 @@ mod tests {
             .lock()
             .unwrap()
             .iter()
-            .map(|request| request.headers["range"].clone())
+            .map(|request| format!("bytes={}-{}", request.range.start(), request.range.end()))
             .collect()
-    }
-
-    #[test]
-    fn every_transfer_shape_has_a_pinned_key() {
-        for shape in spr_client::SPP_SUPPORTED_SHAPES {
-            let name = format!(
-                "transfer_confidential_{}_{}.key",
-                shape.n_inputs(),
-                shape.n_outputs()
-            );
-            assert!(lockfile().keys.contains_key(&name), "{name} is not pinned");
-        }
     }
 
     #[test]
@@ -1088,15 +998,6 @@ mod tests {
             .any(|name| name.starts_with("transfer_confidential_eddsa_")));
     }
 
-    #[test]
-    fn pinned_keys_match_the_verifying_keys() {
-        for (name, sha256) in spr_interface::verifying_keys::PROVING_KEY_SHA256S {
-            if let Some(entry) = lockfile().keys.get(*name) {
-                assert_eq!(entry.sha256, hex(sha256), "{name}");
-            }
-        }
-    }
-
     /// Every zopro key is built from a pinned gnark key, with its digest.
     #[test]
     fn zopro_keys_are_built_from_the_pinned_keys() {
@@ -1110,63 +1011,33 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} is not pinned"));
             assert_eq!(entry.key_sha256, key.sha256, "{name}");
             assert_eq!(entry.file, name.replace(".key", ".zopro"), "{name}");
-            assert!(is_wallet_key(name), "{name}");
+            assert!(is_local_key(name), "{name}");
         }
     }
 
     #[test]
     fn a_key_the_verifying_key_does_not_pin_is_refused() {
         let store = KeyStore::new(scratch("refused"), None, unreachable());
-        let unknown = ExpectedProvingKey {
+        let unknown = ExpectedKey {
             name: "transfer_confidential_9_9.key".into(),
             sha256: [0; 32],
         };
         assert_eq!(
             store.ensure(&unknown).unwrap_err(),
-            WalletError::ProvingKeyUnknown {
+            ProverError::KeyUnknown {
                 name: "transfer_confidential_9_9.key".into()
             }
         );
-        let foreign = ExpectedProvingKey {
+        let foreign = ExpectedKey {
             name: "transfer_confidential_2_2.key".into(),
             sha256: [0; 32],
         };
         assert_eq!(
             store.ensure(&foreign).unwrap_err(),
-            WalletError::ProvingKeyMismatch {
+            ProverError::KeyMismatch {
                 name: "transfer_confidential_2_2.key".into()
             }
         );
-    }
-
-    #[test]
-    fn the_keys_of_spends_and_merges_are_the_shapes_the_sdk_picks() {
-        assert_eq!(
-            needed(4, vec![2], 0).unwrap(),
-            [
-                "transfer_confidential_1_2.key",
-                "transfer_confidential_2_2.key",
-                "transfer_confidential_3_2.key",
-                "transfer_confidential_4_2.key",
-            ]
-        );
-        // Seven notes prove with the eight-input shape, three outputs with four.
-        let wide = needed(7, vec![3], 25).unwrap();
-        assert!(wide.contains(&"transfer_confidential_8_4.key".to_string()));
-        assert!(!wide.contains(&"transfer_confidential_7_4.key".to_string()));
-        assert_eq!(
-            wide.iter()
-                .filter(|name| name.starts_with("merge_"))
-                .collect::<Vec<_>>(),
-            ["merge_8_1.key", "merge_24_1.key", "merge_52_1.key"]
-        );
-        assert_eq!(
-            needed(1, vec![17], 0).unwrap_err(),
-            WalletError::ProvingKeyUnknown {
-                name: "transfer_confidential_1_17.key".into()
-            }
-        );
-        assert!(needed(0, vec![2], 0).unwrap().is_empty());
     }
 
     #[test]
@@ -1174,13 +1045,13 @@ mod tests {
         let root = scratch("resume");
         let (data, entry) = key();
         let path = root.join(key_set()).join("k.key");
-        let failed = WalletError::ProvingKeyDownloadFailed {
+        let failed = ProverError::KeyDownloadFailed {
             name: "k.key".into(),
         };
 
         // The third part stalls: the first two stay on disk.
         let (transport, requests) = host(data.clone(), |index| {
-            (index == 2).then(|| refused("stalled".into()))
+            (index == 2).then(|| Err(io::Error::other("stalled")))
         });
         let store = store(&root, transport);
         assert_eq!(
@@ -1217,7 +1088,7 @@ mod tests {
         let (data, entry) = key();
         let body = data.clone();
         let (transport, requests) = fake(move |_| {
-            Ok(TransportResponse {
+            Ok(KeyDownloadResponse {
                 status: 200,
                 headers: HashMap::new(),
                 body: body.clone(),
@@ -1230,13 +1101,11 @@ mod tests {
             .unwrap();
         assert_eq!(fs::read(path).unwrap(), data);
         let request = requests.lock().unwrap().pop().unwrap();
-        assert_eq!(request.method, "GET");
         assert_eq!(
             request.url,
             format!("{DEFAULT_PROVING_KEYS_URL}/{}/k.key", artifacts().prefix)
         );
         assert_eq!(request.max_response_bytes, Some(100));
-        assert!(request.body.is_empty());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -1270,7 +1139,7 @@ mod tests {
         let corrupt = store(&root, host(tampered, |_| None).0);
         assert_eq!(
             corrupt.fetch("k.key", &entry, &mut |_| true).unwrap_err(),
-            WalletError::ProvingKeyCorrupt {
+            ProverError::KeyCorrupt {
                 name: "k.key".into()
             }
         );
@@ -1279,7 +1148,7 @@ mod tests {
         // A part of another range, or of another file, is not appended.
         for content_range in ["bytes 30-59/100", "bytes 0-29/101"] {
             let (transport, _) = host(data.clone(), move |_| {
-                Some(Ok(TransportResponse {
+                Some(Ok(KeyDownloadResponse {
                     status: 206,
                     headers: HashMap::from([(
                         "Content-Range".to_string(),
@@ -1295,7 +1164,7 @@ mod tests {
                 }
                 .fetch("k.key", &entry, &mut |_| true)
                 .unwrap_err(),
-                WalletError::ProvingKeyDownloadFailed {
+                ProverError::KeyDownloadFailed {
                     name: "k.key".into()
                 }
             );
@@ -1334,7 +1203,7 @@ mod tests {
             .fetch("k.key", &entry, &mut |_| true)
             .unwrap()
             .unwrap();
-        let image = spr_local_prover::image_path(&path);
+        let image = image_path(&path);
         fs::write(&image, b"image").unwrap();
 
         fs::remove_file(Verified::path(&path)).unwrap();
@@ -1397,7 +1266,7 @@ mod tests {
             ..entry.clone()
         };
         let done = store
-            .prefetch(&[("k.key", &entry), ("l.key", &l)], |update| {
+            .prefetch_entries(&[("k.key", &entry), ("l.key", &l)], |update| {
                 updates.push((update.name.clone(), update.keys_done, update.downloaded));
                 true
             })
@@ -1417,7 +1286,7 @@ mod tests {
         assert_eq!(requests.lock().unwrap().len(), 4);
 
         let stopped = store
-            .prefetch(&[("m.key", &m)], |update| update.downloaded == 0)
+            .prefetch_entries(&[("m.key", &m)], |update| update.downloaded == 0)
             .unwrap();
         assert!(!stopped);
         fs::remove_dir_all(&root).unwrap();
@@ -1451,11 +1320,11 @@ mod tests {
     }
 
     #[test]
-    fn status_lists_the_wallet_keys_and_what_is_on_disk() {
+    fn status_lists_the_local_keys_and_what_is_on_disk() {
         let root = scratch("status");
         let store = KeyStore::new(&root, None, unreachable());
         let status = store.status();
-        assert!(status.iter().all(|key| is_wallet_key(&key.name)));
+        assert!(status.iter().all(|key| is_local_key(&key.name)));
         assert!(status.iter().any(|key| key.name == "merge_52_1.key"));
         assert!(!status.iter().any(|key| key.name.contains("ring")));
         assert!(status.windows(2).all(|pair| pair[0].size <= pair[1].size));
