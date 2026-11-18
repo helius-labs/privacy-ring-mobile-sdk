@@ -25,14 +25,18 @@ abstract interface class SolanaSigner {
 
 /// Sends one HTTP request of the wallet. The wallet never opens a connection:
 /// Solana RPC and indexer calls (`POST`, JSON), proving-key downloads (`GET`,
-/// files of several MB) and remote proofs (`POST` to `WalletConfig.proverUrl`,
-/// then `GET` of a queued proof's status) all go through its transport, the
-/// package's own on `package:http` or the one the application passes to
-/// [SprWallet.open]. The request carries the method, the URL with its
-/// `api-key`, the content type of a `POST` and `x-sync` or `x-async` on a
-/// proof request, nothing else; send it as it is, following redirects (the
-/// key host may redirect). A proof request's body is the transaction's
-/// witness, the wallet's nullifier secret included: do not log it.
+/// files of several MB), the prover's attestation and signed policy (`GET`)
+/// and remote proofs (`POST` to `WalletConfig.proverUrl`, then `GET` of a
+/// queued proof's status) all go through its transport, the package's own on
+/// `package:http` or the one the application passes to [SprWallet.open].
+/// Send the request as it is, the method, the URL with its `api-key` and
+/// every header, following redirects (the key host may redirect): the
+/// content type of a `POST`, `x-sync` or `x-async` on a proof request,
+/// `spr-tee` and `spr-tee-enc` on a request encrypted to the prover's TEE,
+/// with `spr-tee-ciphertext` on an encrypted `GET`, and `range` on a key
+/// download. The prover refuses an encrypted request without its `spr-tee*`
+/// headers. A proof request's body is the transaction's witness, the
+/// wallet's nullifier secret included: do not log it.
 ///
 /// Return the server's response whatever its status, with its headers (a
 /// prover inside a TEE marks its encrypted body in them), and throw only when
@@ -744,12 +748,13 @@ class SprWallet {
   ///
   /// The download starts when the stream is listened to and reports each
   /// part of a few MB; keys already on the device are skipped. Cancelling the
-  /// subscription stops it after the part in flight, and so does [close]:
-  /// what was downloaded stays, and the next download of that key resumes
-  /// from it. It runs beside the wallet's other calls, and a proof that needs
-  /// a key it is downloading waits for it. A failure, such as
-  /// [WalletError.provingKeyDownloadFailed], ends the stream with a
-  /// [WalletError].
+  /// subscription stops it after the part in flight. [close] stops it too,
+  /// aborting the part in flight with the package's transport, and ends the
+  /// stream with [WalletError.walletClosed]. What was downloaded stays, and
+  /// the next download of that key resumes from it. It runs beside the
+  /// wallet's other calls, and a proof that needs a key it is downloading
+  /// waits for it. A failure, such as [WalletError.provingKeyDownloadFailed],
+  /// ends the stream with a [WalletError].
   Stream<native.ProvingKeyProgress> prefetchProvingKeys({
     required int maxInputs,
     List<int> outputs = const [2],
@@ -776,7 +781,13 @@ class SprWallet {
           );
           if (!done && !stopped) _ensureOpen();
         } catch (error, stack) {
-          if (!stopped) updates.addError(error, stack);
+          // close() aborts the part in flight, which then fails as a download.
+          if (!stopped) {
+            updates.addError(
+              isClosed ? const WalletError.walletClosed() : error,
+              stack,
+            );
+          }
         }
         await updates.close();
       },
@@ -853,13 +864,17 @@ class SprWallet {
   Future<T> _serial<T>(Future<T> Function() operation) {
     final result = _last.then((_) async {
       _ensureOpen();
+      final T value;
       try {
-        return await operation();
+        value = await operation();
       } catch (_) {
         // A step that failed because close() aborted it reports the close.
         _ensureOpen();
         rethrow;
       }
+      // A step that finished after close() returns nothing it read.
+      _ensureOpen();
+      return value;
     });
     _last = result.then((_) {}, onError: (_) {});
     return result;

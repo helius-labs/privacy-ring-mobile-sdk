@@ -214,7 +214,10 @@ An unknown payment is never automatically refreshed, re-proved or replaced.
 Recovery reconciles its saved signature, and on an unknown outcome can resend
 only the exact saved message and signature. This covers a crash between saving
 and submitting. If that replay fails, recovery checks the original signature
-again; a replay failure alone never clears the run. The example retains stalled/failed/expired
+again; a replay failure alone never clears the run. A payment the chain refused
+returns the run to approval, where it can be refreshed and signed again: every
+wallet error but `transactionOutcomeUnknown` and `walletClosed` counts as a
+refusal. The example retains stalled/failed/expired
 runs for inspection rather than automatically abandoning them. An expired or
 closed cache cannot be used for a new cached payment. Merges also publish their
 outputs to the tree: after resolving earlier submissions and releasing the

@@ -995,11 +995,14 @@ final wallet = await SprWallet.open(
 );
 ```
 
-- The request carries the method, the URL with its `api-key` parameter, the
-  content type of a `POST`, `X-Sync` or `X-Async` on a proof request, and
-  `Range` on a key download; nothing else. Send it as it is, and follow redirects: the proving-key host
-  may redirect. A proof request's body is the transaction's witness, the
-  nullifier secret included: do not log it.
+- Send the request as it is: the method, the URL with its `api-key`
+  parameter and every header. The headers are the content type of a `POST`,
+  `X-Sync` or `X-Async` on a proof request, `Spr-Tee` and `Spr-Tee-Enc` on a
+  request encrypted to the prover's TEE, with `Spr-Tee-Ciphertext` on an
+  encrypted `GET`, and `Range` on a key download. A transport that keeps only
+  the headers it knows fails every remote proof. Follow redirects: the
+  proving-key host may redirect. A proof request's body is the transaction's
+  witness, the nullifier secret included: do not log it.
 - A key download asks for one part of the key with `Range` and sets
   `maxResponseBytes` to that part's size (the whole key for the first part,
   in case the host ignores ranges). Stop reading and throw when the body

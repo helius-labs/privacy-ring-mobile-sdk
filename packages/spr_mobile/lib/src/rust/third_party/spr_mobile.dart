@@ -1178,21 +1178,26 @@ class TransportOutcome {
 /// One HTTP request of the wallet.
 class TransportRequest {
   /// `POST` for Solana RPC and indexer calls and proof requests, `GET` for
-  /// proving keys and the status of a queued proof.
+  /// proving keys, the prover's attestation, its signed policy and the
+  /// status of a queued proof.
   final String method;
   final String url;
 
   /// The content type of a `POST`, `x-sync` or `x-async` on a proof
-  /// request, and `range` on a proving-key download; nothing else.
+  /// request, `spr-tee` and `spr-tee-enc` on a request encrypted to the
+  /// prover's TEE, with `spr-tee-ciphertext` on an encrypted `GET`, and
+  /// `range` on a proving-key download. Send every header as it is: the
+  /// prover refuses an encrypted request without its `spr-tee*` headers.
   final Map<String, String> headers;
 
   /// Empty for a `GET`. A proof request's body is the transaction's
   /// witness, the wallet's nullifier secret included.
   final Uint8List body;
 
-  /// The most bytes the response body may hold, for a proving-key download
-  /// (the size of the part it asks for). A transport stops reading and
-  /// fails past it; the wallet refuses a longer body either way.
+  /// The most bytes the response body may hold, when the wallet bounds it:
+  /// the part a proving-key download asks for, the prover's attestation
+  /// and its signed policy. A transport stops reading and fails past it;
+  /// the wallet refuses a longer body either way.
   final int? maxResponseBytes;
 
   /// The caller's bound on the request, in milliseconds, when it has one
