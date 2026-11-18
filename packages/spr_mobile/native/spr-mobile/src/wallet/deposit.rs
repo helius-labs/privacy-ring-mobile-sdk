@@ -40,17 +40,13 @@ impl MobileWallet {
                 .instruction(),
             );
         }
-        let deposit_asset = match asset.token_program {
-            None => DepositAsset::Sol,
-            Some(token_program) => DepositAsset::Spl(DepositSplAccounts {
+        let deposit_asset = match (asset.token_program, asset.token_account(&self.owner)) {
+            (Some(token_program), Some(user_token)) => DepositAsset::Spl(DepositSplAccounts {
                 mint: asset.mint,
-                user_token: pda::associated_token_address_with_program(
-                    &self.owner,
-                    &asset.mint,
-                    &token_program,
-                ),
+                user_token,
                 token_program,
             }),
+            _ => DepositAsset::Sol,
         };
         // The wallet's viewing key tags a deposit: it is how the wallet finds
         // the output without knowing who sent it.

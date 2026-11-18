@@ -87,11 +87,9 @@ fn account(seed_var: &str) -> Keypair {
     let Ok(seed) = env::var(seed_var) else {
         return Keypair::new();
     };
-    let bytes: Vec<u8> = (0..seed.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&seed[i..i + 2], 16).expect("hex seed"))
-        .collect();
-    Keypair::new_from_array(bytes.try_into().expect("32-byte seed"))
+    let mut bytes = [0; 32];
+    hex::decode_to_slice(&seed, &mut bytes).expect("32-byte hex seed");
+    Keypair::new_from_array(bytes)
 }
 
 fn config() -> WalletConfig {

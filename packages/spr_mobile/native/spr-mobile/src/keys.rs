@@ -21,7 +21,7 @@ use std::{
 use flutter_rust_bridge::DartFnFuture;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use spr_client::prover::ExpectedProvingKey;
+use spr_client::prover::{ExpectedProvingKey, ProverKeys, ProvingKeyFormat};
 use spr_transaction::instructions::{merge::merge_circuit_width, transact::canonical_shape};
 use zeroize::Zeroizing;
 
@@ -62,6 +62,10 @@ struct KeyEntry {
 #[derive(Deserialize)]
 struct Artifacts {
     prefix: String,
+    /// Where the default host serves the set: [`DEFAULT_PROVING_KEYS_URL`]
+    /// and the prefix.
+    #[serde(rename = "baseUrl")]
+    base_url: String,
     keys: HashMap<String, LockEntry>,
 }
 
@@ -77,31 +81,12 @@ struct LockEntry {
     key_sha256: String,
 }
 
-#[derive(Deserialize)]
-struct DownloadCatalog {
-    keys: Vec<DownloadKey>,
-}
-
-#[derive(Deserialize)]
-struct DownloadKey {
-    name: String,
-    artifacts: Vec<DownloadArtifact>,
-}
-
-#[derive(Deserialize)]
-struct DownloadArtifact {
-    format: String,
-    sha256: String,
-    size: u64,
-    url: String,
-}
-
 /// /proving-keys is discovery metadata, not a new trust anchor or a route list.
 fn catalog_urls(
     json: &str,
     pins: &HashMap<String, LockEntry>,
 ) -> Result<HashMap<String, String>, WalletError> {
-    let catalog: DownloadCatalog =
+    let catalog: ProverKeys =
         serde_json::from_str(json).map_err(|_| WalletError::ProvingKeyCatalogInvalid)?;
     let mut seen = HashSet::new();
     let mut urls = HashMap::new();
@@ -112,16 +97,13 @@ fn catalog_urls(
         let Some(pin) = pins.get(&key.name) else {
             continue;
         };
-        let gnark: Vec<_> = key
-            .artifacts
-            .iter()
-            .filter(|a| a.format == "gnark")
-            .collect();
-        let zopro: Vec<_> = key
-            .artifacts
-            .iter()
-            .filter(|a| a.format == "zopro")
-            .collect();
+        let of = |format| -> Vec<_> {
+            key.artifacts
+                .iter()
+                .filter(|a| a.format == format)
+                .collect()
+        };
+        let (gnark, zopro) = (of(ProvingKeyFormat::Gnark), of(ProvingKeyFormat::Zopro));
         if gnark.len() != 1 || zopro.len() > 1 {
             return Err(WalletError::ProvingKeyCatalogInvalid);
         }
@@ -301,7 +283,8 @@ impl ProvingKeys {
         request_json: String,
     ) -> Result<ProvedRequest, WalletError> {
         let request_json = Zeroizing::new(request_json);
-        let sha256 = sha256_bytes(&entry(&key_name)?.key_sha256).ok_or_else(|| {
+        let mut sha256 = [0; 32];
+        hex::decode_to_slice(&entry(&key_name)?.key_sha256, &mut sha256).map_err(|_| {
             WalletError::ProvingKeyUnknown {
                 name: key_name.clone(),
             }
@@ -377,17 +360,26 @@ impl KeyStore {
     }
 
     fn download_url(&self, name: &str, entry: &LockEntry) -> Result<String, WalletError> {
-        match &self.catalog_urls {
-            Some(urls) => urls
+        match (&self.catalog_urls, &self.base_url) {
+            (Some(urls), _) => urls
                 .get(name)
                 .cloned()
                 .ok_or_else(|| WalletError::ProvingKeyUnknown { name: name.into() }),
-            None => Ok(format!(
-                "{}/{}/{}",
-                self.base_url.as_deref().unwrap_or(DEFAULT_PROVING_KEYS_URL),
-                artifacts().prefix,
-                entry.file
-            )),
+            (None, Some(base_url)) => {
+                Ok(format!("{base_url}/{}/{}", artifacts().prefix, entry.file))
+            }
+            (None, None) => Ok(format!("{}{}", artifacts().base_url, entry.file)),
+        }
+    }
+
+    /// Fails with `proving_key_unknown` when a catalog lists no location for
+    /// `name`, before anything is read or downloaded.
+    fn check_listed(&self, name: &str) -> Result<(), WalletError> {
+        match &self.catalog_urls {
+            Some(urls) if !urls.contains_key(name) => {
+                Err(WalletError::ProvingKeyUnknown { name: name.into() })
+            }
+            _ => Ok(()),
         }
     }
 
@@ -399,8 +391,8 @@ impl KeyStore {
     pub fn ensure(&self, key: &ExpectedProvingKey) -> Result<(PathBuf, u64), WalletError> {
         let name = key.name.as_str();
         let entry = entry(name)?;
-        self.download_url(name, entry)?;
-        if entry.key_sha256 != hex(&key.sha256) {
+        self.check_listed(name)?;
+        if entry.key_sha256 != hex::encode(key.sha256) {
             return Err(WalletError::ProvingKeyMismatch { name: name.into() });
         }
         let on_device = self.on_disk(name, entry);
@@ -458,7 +450,7 @@ impl KeyStore {
     ) -> Result<bool, WalletError> {
         let mut pending = Vec::new();
         for &(name, entry) in keys {
-            self.download_url(name, entry)?;
+            self.check_listed(name)?;
             let on_disk = self.on_disk(name, entry);
             let done =
                 self.is_verified(name) || Verified::matches(&self.dir.join(&entry.file), entry);
@@ -692,18 +684,6 @@ fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// The bytes of a lowercase hex SHA-256, as the lockfile writes it.
-fn sha256_bytes(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
-        return None;
-    }
-    let mut bytes = [0; 32];
-    for (byte, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
-    }
-    Some(bytes)
-}
-
 /// Remove the key sets of other lockfiles under `root`. Best effort: a set
 /// that cannot be removed now is removed by a later open.
 fn prune(root: &Path) {
@@ -816,17 +796,13 @@ fn copy_bounded(
     if copied != size {
         return Err(corrupt());
     }
-    Ok(hex(&hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn store_failed(path: &Path) -> WalletError {
     WalletError::ProvingKeyStoreFailed {
         path: path.display().to_string(),
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -867,9 +843,9 @@ mod tests {
         let data: Vec<u8> = (0..100).collect();
         let entry = LockEntry {
             file: "k.key".into(),
-            sha256: hex(&Sha256::digest(&data)),
+            sha256: hex::encode(Sha256::digest(&data)),
             size: data.len() as u64,
-            key_sha256: hex(&Sha256::digest(&data)),
+            key_sha256: hex::encode(Sha256::digest(&data)),
         };
         (data, entry)
     }
@@ -881,6 +857,18 @@ mod tests {
             {"format": "zopro", "sha256": entry.sha256, "size": entry.size,
              "url": "https://mirror.example/old-prefix/key.bin?version=pinned"}
         ]}]})
+    }
+
+    #[test]
+    fn a_catalog_with_another_format_is_invalid() {
+        let (_, entry) = key();
+        let pins = HashMap::from([("k.key".into(), entry.clone())]);
+        let mut value = catalog("k.key", &entry);
+        value["keys"][0]["artifacts"][1]["format"] = "wasm".into();
+        assert_eq!(
+            catalog_urls(&value.to_string(), &pins).err(),
+            Some(WalletError::ProvingKeyCatalogInvalid)
+        );
     }
 
     #[test]
@@ -1092,7 +1080,7 @@ mod tests {
     fn pinned_keys_match_the_verifying_keys() {
         for (name, sha256) in spr_interface::verifying_keys::PROVING_KEY_SHA256S {
             if let Some(entry) = lockfile().keys.get(*name) {
-                assert_eq!(entry.sha256, hex(sha256), "{name}");
+                assert_eq!(entry.sha256, hex::encode(sha256), "{name}");
             }
         }
     }

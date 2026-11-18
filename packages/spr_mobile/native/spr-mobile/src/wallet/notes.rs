@@ -1,6 +1,9 @@
 //! Public note descriptions and exact merge input selection. Private openings
 //! stay in the wallet; the application refers to notes by their commitments.
-use super::{util::invalid, MobileWallet};
+use super::{
+    util::{invalid, spend_candidate},
+    MobileWallet,
+};
 use crate::{asset::mint_name, error::WalletError};
 use spr_transaction::WalletUtxo;
 use std::collections::{HashMap, HashSet};
@@ -37,11 +40,7 @@ pub(super) fn describe_notes<'a>(
     reserved: &HashSet<[u8; 32]>,
 ) -> Vec<SpendableNote> {
     notes
-        .filter(|note| {
-            note.utxo.amount > 0
-                && note.is_default_ring_spendable()
-                && !reserved.contains(&note.nullifier)
-        })
+        .filter(|note| spend_candidate(note, reserved))
         .map(|note| SpendableNote {
             id: hex::encode(note.utxo_hash),
             mint: mint_name(&note.utxo.asset.asset),
@@ -60,7 +59,9 @@ pub(super) const MAX_CACHED_MERGE_INPUTS: usize = 51;
 /// lowercase hex commitments.
 pub(super) fn merge_input_ids(ids: &[String]) -> Result<Vec<[u8; 32]>, WalletError> {
     if !(2..=MAX_CACHED_MERGE_INPUTS).contains(&ids.len()) {
-        return Err(invalid("cached merge requires 2 to 51 inputIds"));
+        return Err(invalid(&format!(
+            "cached merge requires 2 to {MAX_CACHED_MERGE_INPUTS} inputIds"
+        )));
     }
     let mut seen = HashSet::new();
     ids.iter()

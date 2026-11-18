@@ -32,7 +32,7 @@ impl MobileWallet {
         priority_fee_lamports: Option<u64>,
     ) -> Result<PreparedTransaction, WalletError> {
         let payer = self.fee_payer(fee_payer)?;
-        let proving = self.proving(proving)?;
+        let remote = self.remote_prover(proving)?;
         let asset = self.asset(mint)?;
         let reserved = self.reserved()?;
         let max_inputs = max_inputs.map_or(MERGE_DEFAULT_INPUT_COUNT, |max| {
@@ -53,11 +53,7 @@ impl MobileWallet {
         let amount = merge.output_utxo.amount;
         let mut submission =
             MergeSubmission::new(&merge, self.owner, &self.address, &self.nullifier_key);
-        if proving == Proving::Remote {
-            let remote = self
-                .remote_prover
-                .clone()
-                .ok_or(WalletError::RemoteProverMissing)?;
+        if let Some(remote) = remote {
             submission = submission.with_prover(remote);
         }
         let mut unsigned = submission.finish_unsigned_sync(&self.client, payer)?;
