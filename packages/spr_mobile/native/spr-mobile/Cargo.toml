@@ -30,10 +30,9 @@ reqwest = { version = "0.12", default-features = false }
 reqwest-middleware = "0.4"
 # The prover: the request to a witness, the arithmetic (on the GPU where
 # there is one), the verified proof in gnark's formats.
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8" }
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "4e29011a5073cf0a56ac12c63f60e303a7b19fed", features = ["disk-cache"] }
 log = "0.4"
-# The key's image, mapped (prover::load_key).
-memmap2 = "0.9"
+num-bigint = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 solana-account = "4.3"
 solana-commitment-config = "3.1"
@@ -51,26 +50,27 @@ solana-address = "=2.6.1"
 solana-pubkey = "=4.2.0"
 solana-signature = "=3.4.1"
 wincode = "=0.5.5"
-spr-hasher = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["std"] }
-spr-interface = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["borsh"] }
-spr-keypair = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-program = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-api = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-client = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["client"] }
-spr-transaction = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-user-registry-interface = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
+spr-hasher = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d", features = ["std"] }
+spr-interface = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d", features = ["borsh"] }
+spr-keypair = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-program = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-api = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-client = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d", features = ["client"] }
+spr-transaction = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-user-registry-interface = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["metal"] }
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "4e29011a5073cf0a56ac12c63f60e303a7b19fed", features = ["metal"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["wgpu"] }
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "4e29011a5073cf0a56ac12c63f60e303a7b19fed", features = ["wgpu"] }
 
 [dev-dependencies]
+spr-merkle-tree = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 solana-keypair = "3"

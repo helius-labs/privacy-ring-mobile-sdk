@@ -13,9 +13,9 @@ description = "Writes the /prove request fixtures the proof timing harness prove
 num-bigint = "0.4"
 solana-address = "=2.6.1"
 solana-signature = "=3.4.1"
-spr-client = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["client"] }
-spr-hasher = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["std"] }
-spr-interface = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-keypair = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-merkle-tree = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-spr-transaction = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
+spr-client = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d", features = ["client"] }
+spr-hasher = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d", features = ["std"] }
+spr-interface = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-keypair = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-merkle-tree = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }
+spr-transaction = { git = "https://github.com/helius-labs/zolana", rev = "1e2ab196252dd81fdfd7e315ee3cff51ccb5201d" }

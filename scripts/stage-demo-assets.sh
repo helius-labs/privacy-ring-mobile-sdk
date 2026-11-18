@@ -4,14 +4,14 @@ set -euo pipefail
 # Stages the example app's proving assets: the 2 -> 2 transfer's zopro key and
 # the fixture requests. The key downloads from the proving keys' CDN (or
 # copies from $ZOPRO_KEYS_DIR when set) and is checked against the wallet's
-# lockfile.
+# lockfile. The native proof job also stages a merge key in the cache.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 asset_dir="$repo_root/packages/spr_mobile/example/assets/proving"
 key_name="transfer_confidential_2_2.zopro"
 # The lockfile's prefix; its last part names the key set's directory, as the
 # wallet lays out its key directory.
 key_prefix="proving-keys/78751f5d1c591777/"
-key="$repo_root/.cache/proving/$(basename "$key_prefix")/$key_name"
+key_dir="$repo_root/.cache/proving/$(basename "$key_prefix")"
 key_checksum="4687bf25f01c6a26d3e1f6e6ea2dc9935e6b9751f935b54927292d1808e839b9"
 request_checksum="38f39f6ac8c23d4d74105bf9dd743213a94470cc46219667d67fd67db1941df3"
 
@@ -32,30 +32,35 @@ verify() {
   fi
 }
 
-if [[ ! -f "$key" ]] || [[ "$(sha256 "$key")" != "$key_checksum" ]]; then
-  temporary_key="$(mktemp)"
+stage_key() (
+  local name="$1" checksum="$2"
+  local destination="$key_dir/$name"
+  if [[ -f "$destination" ]] && [[ "$(sha256 "$destination")" == "$checksum" ]]; then
+    return
+  fi
+  mkdir -p "$key_dir"
+  local temporary_key
+  temporary_key="$(mktemp "$key_dir/.zopro-key.XXXXXX")"
   trap 'rm -f "$temporary_key"' EXIT
   if [[ -n "${ZOPRO_KEYS_DIR:-}" ]]; then
-    cp "$ZOPRO_KEYS_DIR/$key_name" "$temporary_key"
+    cp "$ZOPRO_KEYS_DIR/$name" "$temporary_key"
   else
-    base_url="${ZOLANA_PROVING_KEYS_URL:-https://d3gbdb0egjwcw9.cloudfront.net}"
-    echo "downloading $key_name"
-    curl -fsSL "$base_url/$key_prefix$key_name" -o "$temporary_key"
+    local base_url="${ZOLANA_PROVING_KEYS_URL:-https://d3gbdb0egjwcw9.cloudfront.net}"
+    echo "downloading $name"
+    curl -fsSL "$base_url/$key_prefix$name" -o "$temporary_key"
   fi
-  if [[ "$(sha256 "$temporary_key")" != "$key_checksum" ]]; then
-    echo "the proving key's checksum does not match the lockfile" >&2
-    exit 1
-  fi
-  mkdir -p "$(dirname "$key")"
-  mv "$temporary_key" "$key"
-  trap - EXIT
-fi
+  verify "$temporary_key" "$checksum"
+  mv "$temporary_key" "$destination"
+)
 
-verify "$key" "$key_checksum"
+stage_key "$key_name" "$key_checksum"
+if [[ "${1:-}" == "--with-merge-key" ]]; then
+  stage_key merge_8_1.zopro 768f1c8bb8d3667edc77c17124ccc094aedbbcc774eaefccd5f9ccb216e7d791
+fi
 verify "$repo_root/fixtures/prove-request-2x2.json" "$request_checksum"
 
 mkdir -p "$asset_dir"
-cp "$key" "$asset_dir/$key_name"
+cp "$key_dir/$key_name" "$asset_dir/$key_name"
 # The fixture requests of every shape, for the proof timing harness.
 cp "$repo_root"/fixtures/prove-request-*.json "$asset_dir/"
 echo "staged demo proving assets in $asset_dir"

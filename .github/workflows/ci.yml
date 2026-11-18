@@ -71,11 +71,12 @@ jobs:
           key: native-tests-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: native-tests-sccache0.18.0-rust${{ steps.rust.outputs.cachekey }}-
       - run: sccache --start-server
-      - run: ./scripts/stage-demo-assets.sh
+      - run: ./scripts/stage-demo-assets.sh --with-merge-key
       - run: cargo test --workspace
         env:
           ZOLANA_TEST_KEYS: ${{ github.workspace }}/packages/spr_mobile/example/assets/proving
-      - run: cargo test -p spr-mobile proves_a_client_request_with_the_pinned_key -- --ignored
+      - name: Verify typed transfer and merge proofs
+        run: cargo test -p spr-mobile --lib prover::tests::proves_a_ -- --ignored --test-threads=1
         env:
           ZOLANA_TEST_KEY_DIR: ${{ github.workspace }}/.cache/proving
       - run: flutter pub get && flutter analyze && flutter test

@@ -24,6 +24,10 @@ mod prover;
 mod transport;
 mod wallet;
 
+#[cfg(test)]
+#[path = "../../../../../fixtures/trees.rs"]
+mod fixture_trees;
+
 pub use activity::{
     ActivityEntry, ActivityKind, TransactionLookup, TransactionLookupStatus, TransactionOutput,
 };

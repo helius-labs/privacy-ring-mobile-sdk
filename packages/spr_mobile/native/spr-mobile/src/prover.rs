@@ -13,6 +13,10 @@ use spr_client::{prover::ExpectedProvingKey, ClientError, Proof, ProveRequest, P
 
 use crate::{elapsed_ms, error::WalletError, keys, Loaded, ProvedRequest, PREPARED};
 
+mod input;
+
+pub(crate) use zopro_spr::zopro_prover::disk::image_path;
+
 /// Where a spend is proved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Proving {
@@ -25,9 +29,8 @@ pub enum Proving {
     Remote,
 }
 
-/// Proves each `/prove` body with the key the client names for it, loading
-/// that key into the shared slot when it changes. Request bodies carry
-/// nullifier secrets and never leave the process. Clones share one prover.
+/// Proves the client's assembled inputs with the named key, loading that
+/// key into the shared slot when it changes. Clones share one prover.
 #[derive(Clone)]
 pub(crate) struct NativeProver(Arc<Native>);
 
@@ -64,86 +67,13 @@ fn device_log() {
     });
 }
 
-/// Where a key file's image is kept (`zopro_prover::raw`): the key's
-/// points as the kernel reads them in place and its solver's image, written
-/// at the key's first load and mapped at every load, so the system may drop
-/// and read again the points' pages under memory pressure instead of the
-/// app holding them, and a load decompresses nothing (16 -> 2 on a phone:
-/// 0.4 s rather than 8.6, ~140 MB of the app's own memory rather than
-/// ~360). The name carries both layouts' versions: a kernel that reads
-/// another writes its own.
-pub(crate) fn image_path(key: &std::path::Path) -> std::path::PathBuf {
-    let mut name = key
-        .file_name()
-        .map(|n| n.to_os_string())
-        .unwrap_or_default();
-    name.push(format!(
-        ".{}.solver{}",
-        zopro_spr::zopro_prover::raw::FORMAT,
-        zopro_spr::zopro_core::solver_image_version()
-    ));
-    key.with_file_name(name)
-}
-
-/// A key file loaded through its image: mapped, written from the key file
-/// first when there is none or it does not load. A device that cannot
-/// write it (a full disk) proves from the key file in memory.
+/// Load a trusted key through zopro's disk cache.
 pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_spr::Prover, WalletError> {
     device_log();
-    let failed = |e: &dyn std::fmt::Display| {
-        log::warn!("zopro: {}: {e}", path.display());
+    zopro_spr::Prover::load_cached(path).map_err(|error| {
+        log::warn!("zopro: {}: {error}", path.display());
         WalletError::ProverLoadFailed
-    };
-    // The GPU driver's compiled kernels, beside the keys: a phone compiles
-    // them once rather than at every launch.
-    zopro_spr::zopro_core::set_gpu_pipeline_cache(&path.with_file_name("zopro-gpu.cache"));
-    let image = image_path(path);
-    if image.is_file() {
-        match load_image(&image) {
-            Ok(prover) => return Ok(prover),
-            Err(e) => log::warn!("zopro: {}: {e}; written again", image.display()),
-        }
-    }
-    match write_image(path, &image).and_then(|()| load_image(&image)) {
-        Ok(prover) => Ok(prover),
-        Err(e) => {
-            log::warn!("zopro: {}: {e}; proving from the key file", image.display());
-            let _ = std::fs::remove_file(&image);
-            let key = map(path).map_err(|e| failed(&e))?;
-            zopro_spr::Prover::load(&key).map_err(|e| failed(&e))
-        }
-    }
-}
-
-/// `path` mapped read-only. The store writes keys and images beside and
-/// renames them into place, so a mapped file is never written.
-fn map(path: &std::path::Path) -> Result<memmap2::Mmap, String> {
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    // SAFETY: nothing writes or truncates the file in place (see above).
-    unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())
-}
-
-fn load_image(image: &std::path::Path) -> Result<zopro_spr::Prover, String> {
-    let prover = zopro_spr::zopro_prover::Prover::load_image(std::sync::Arc::new(map(image)?))?;
-    zopro_spr::Prover::new(prover)
-}
-
-/// The key's image, whole or absent: written beside, then renamed.
-fn write_image(key: &std::path::Path, image: &std::path::Path) -> Result<(), String> {
-    let key = map(key)?;
-    let partial = image.with_extension("partial");
-    let written = (|| -> Result<(), String> {
-        let file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
-        let mut out = std::io::BufWriter::new(file);
-        zopro_spr::zopro_prover::Prover::write_image(&key, &mut out)?;
-        let file = out.into_inner().map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        std::fs::rename(&partial, image).map_err(|e| e.to_string())
-    })();
-    if written.is_err() {
-        let _ = std::fs::remove_file(&partial);
-    }
-    written
+    })
 }
 
 /// Why a proof on the device failed, carried through the client as
@@ -165,10 +95,6 @@ impl NativeProver {
             keys,
             loaded: AtomicU64::new(0),
         }))
-    }
-
-    fn prove_json(&self, body: &str, key: &ExpectedProvingKey) -> Result<String, WalletError> {
-        Ok(self.prove_request(body, key)?.proof_json)
     }
 
     /// Loads a key in place of the loaded one (a phone has room for one).
@@ -197,6 +123,14 @@ impl NativeProver {
         body: &str,
         key: &ExpectedProvingKey,
     ) -> Result<ProvedRequest, WalletError> {
+        self.prove_with(key, |prover| prover.prove(body))
+    }
+
+    fn prove_with(
+        &self,
+        key: &ExpectedProvingKey,
+        prove: impl FnOnce(&mut zopro_spr::Prover) -> Result<zopro_spr::ProofResult, zopro_spr::Error>,
+    ) -> Result<ProvedRequest, WalletError> {
         let started = Instant::now();
         let name = key.name.as_str();
         let (path, downloaded_bytes) = self.0.keys.ensure(key)?;
@@ -215,7 +149,7 @@ impl NativeProver {
         }
         let load_ms = elapsed_ms(loading);
         let loaded = state.loaded.as_mut().ok_or(WalletError::ProverClosed)?;
-        let proof = loaded.prover.prove(body).map_err(|error| match error {
+        let proof = prove(&mut loaded.prover).map_err(|error| match error {
             zopro_spr::Error::Unsupported => WalletError::UnsupportedCircuit,
             zopro_spr::Error::Prove(message) => {
                 log::warn!("zopro: {name}: {message}");
@@ -254,12 +188,17 @@ impl Drop for Native {
 /// Proves in the calling thread, so [`ProveRequest::delivery`] does not apply.
 impl Prover for NativeProver {
     fn prove(&self, request: &dyn ProveRequest) -> Result<Proof, ClientError> {
-        let body = request.body()?;
         let key = request.proving_key()?;
-        let proof_json = self
-            .prove_json(&body, &key)
+        let prove = || {
+            let inputs = request
+                .local_inputs()
+                .ok_or(WalletError::UnsupportedCircuit)?;
+            let input = input::convert(inputs)?;
+            self.prove_with(&key, |prover| prover.prove_input(&input))
+        };
+        let proof = prove()
             .map_err(|failure| ClientError::ProverFailed(Box::new(DeviceProverFailure(failure))))?;
-        Proof::from_gnark_json(&proof_json)
+        Proof::from_gnark_json(&proof.proof_json)
     }
 }
 
@@ -272,19 +211,17 @@ mod tests {
 
     use solana_address::Address;
     use spr_client::{
-        assemble, prover::verify_proof_statement, AssembledTransfer, Delivery, MerkleContext,
-        MerkleProof, NonInclusionProof, ProverClient, SpendProof, NULLIFIER_TREE_HEIGHT,
-        STATE_TREE_HEIGHT,
+        assemble,
+        prover::{verify_proof_statement, LocalProvingInputs},
+        AssembledTransfer, Delivery, ProverClient,
     };
-    use spr_interface::{pda, verifying_keys::CircuitId, N_PUBLIC_SLOTS};
+    use spr_interface::{verifying_keys::CircuitId, N_PUBLIC_SLOTS};
     use spr_keypair::ShieldedKeypair;
-    use spr_transaction::{
-        instructions::transact::{ConfidentialTransaction, Shape},
-        Data, Mint, Utxo, WalletUtxo,
-    };
+    use spr_transaction::instructions::transact::{ConfidentialTransaction, Shape};
     use zeroize::Zeroizing;
 
     use super::*;
+    use crate::fixture_trees::Trees;
     use crate::transport::{
         tests::{fake, ok, Requests},
         TransportFailure, TransportRequest, TransportResponse,
@@ -534,41 +471,13 @@ mod tests {
         }
     }
 
-    /// A SOL transfer of `sender`'s one note, built and assembled as the wallet
-    /// builds a spend, against a made-up witness, in the shape of the fixture
-    /// proof.
+    /// A SOL spend assembled against real Merkle paths from test trees.
     fn assembled_transfer(sender: &ShieldedKeypair) -> AssembledTransfer {
-        let utxo = Utxo {
-            owner: sender.signing_pubkey(),
-            asset: Mint::SOL,
-            amount: 10,
-            blinding: [1; 32],
-            ring_program_id: None,
-            data: Data::default(),
-        };
-        let nullifier_pubkey = sender.nullifier_key.pubkey().unwrap();
-        let utxo_hash = utxo.hash(&nullifier_pubkey, &[0; 32], &[0; 32], 0).unwrap();
-        let note = WalletUtxo {
-            nullifier: sender
-                .nullifier_key
-                .nullifier(&utxo_hash, &utxo.blinding)
-                .unwrap(),
-            utxo,
-            nullifier_pubkey,
-            utxo_hash,
-            tx_viewing_key: None,
-            data_hash: None,
-            ring_data_hash: None,
-            tree_id: 0,
-            leaf_index: 0,
-            latest_tree_id: None,
-            slot: 0,
-            tx_signature: Default::default(),
-            slot_index: 0,
-        };
+        let mut trees = Trees::new();
+        let notes = trees.notes(sender, 1);
         let payer = Address::new_from_array(sender.signing_pubkey().as_ed25519().unwrap());
         let recipient = ShieldedKeypair::new_ed25519().unwrap();
-        let mut transaction = ConfidentialTransaction::new(vec![note.clone()], payer).unwrap();
+        let mut transaction = ConfidentialTransaction::new(notes.clone(), payer).unwrap();
         transaction
             .transfer_sol(&recipient.shielded_address().unwrap(), 4)
             .unwrap();
@@ -576,41 +485,13 @@ mod tests {
             .pad_utxos(Shape::IN2_OUT2, &sender.shielded_address().unwrap())
             .unwrap();
         let proof_inputs = transaction.encrypt(sender).unwrap();
-
-        let context = MerkleContext {
-            tree_type: 0,
-            tree: pda::tree(0),
-        };
-        let nullifier = |leaf| NonInclusionProof {
-            leaf,
-            merkle_context: context.clone(),
-            path: vec![[0; 32]; NULLIFIER_TREE_HEIGHT],
-            low_element: [0; 32],
-            low_element_index: 0,
-            high_element: [0; 32],
-            high_element_index: 0,
-            root: [0; 32],
-            root_seq: 0,
-            root_index: 0,
-        };
-        let spend = SpendProof {
-            state: MerkleProof {
-                leaf: note.utxo_hash,
-                merkle_context: context.clone(),
-                path: vec![[0; 32]; STATE_TREE_HEIGHT],
-                leaf_index: 0,
-                root: [0; 32],
-                root_seq: 0,
-                root_index: 0,
-            },
-            nullifier: nullifier(note.nullifier),
-        };
+        let spend = trees.spend_proofs(&notes);
         let dummies: Vec<_> = proof_inputs
             .dummy_nullifiers()
             .into_iter()
-            .map(nullifier)
+            .map(|nullifier| trees.non_inclusion(nullifier))
             .collect();
-        assemble(proof_inputs, &[spend], &dummies).unwrap()
+        assemble(proof_inputs, &spend, &dummies).unwrap()
     }
 
     /// The captured 2→2 client body, with the key it asks for, asked for in
@@ -643,7 +524,10 @@ mod tests {
             None,
             crate::transport::tests::unreachable(),
         )));
-        let failure = prover.prove(&Captured(transfer_2_2_key())).unwrap_err();
+        let sender = ShieldedKeypair::new_ed25519().unwrap();
+        let failure = assembled_transfer(&sender)
+            .prove(&prover, &sender)
+            .unwrap_err();
         assert!(
             matches!(failure, ClientError::ProverFailed(_)),
             "{failure:?}"
@@ -657,34 +541,110 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Downloads `transfer_confidential_2_2.key` into `ZOLANA_TEST_KEY_DIR`
-    /// (or a temp directory) unless it is already there and pinned.
+    /// The local backend may only read the key identity and assembled inputs.
+    struct TypedOnly<'a>(&'a dyn ProveRequest);
+
+    impl ProveRequest for TypedOnly<'_> {
+        fn body(&self) -> Result<Zeroizing<String>, ClientError> {
+            panic!("local proving must not serialize a wire body");
+        }
+
+        fn local_inputs(&self) -> Option<LocalProvingInputs<'_>> {
+            self.0.local_inputs()
+        }
+
+        fn proving_key(&self) -> Result<ExpectedProvingKey, ClientError> {
+            self.0.proving_key()
+        }
+    }
+
+    struct RequireTyped<'a>(&'a NativeProver);
+
+    impl Prover for RequireTyped<'_> {
+        fn prove(&self, request: &dyn ProveRequest) -> Result<Proof, ClientError> {
+            self.0.prove(&TypedOnly(request))
+        }
+    }
+
+    /// Uses the pinned transfer key staged in `ZOLANA_TEST_KEY_DIR`.
     #[test]
-    #[ignore = "downloads a proving key"]
+    #[ignore = "needs the pinned transfer key in ZOLANA_TEST_KEY_DIR"]
     fn proves_a_client_request_with_the_pinned_key() {
+        let prover = native_with_staged_keys();
+        let sender = ShieldedKeypair::new_ed25519().unwrap();
+        let mut transfer = assembled_transfer(&sender);
+        let key = transfer_2_2_key();
+        let path = prover.0.keys.ensure(&key).unwrap().0;
+        let standalone = crate::LocalProver::load(path.display().to_string()).unwrap();
+        let failure = transfer.prove(&RequireTyped(&prover), &sender).unwrap_err();
+        assert_eq!(WalletError::from(failure), WalletError::ProverBusy);
+        standalone.close();
+
+        let image = image_path(&path);
+        let modified = std::fs::metadata(&image).unwrap().modified().unwrap();
+        let reopened = crate::LocalProver::load(path.display().to_string()).unwrap();
+        assert_eq!(
+            std::fs::metadata(&image).unwrap().modified().unwrap(),
+            modified
+        );
+        reopened.close();
+
+        transfer
+            .prove(&RequireTyped(&prover), &sender)
+            .expect("prove and verify the transaction with typed inputs");
+        assert!(image_path(&path).is_file());
+        // The same loaded key serves the next proof.
+        transfer.prove(&RequireTyped(&prover), &sender).unwrap();
+    }
+
+    #[test]
+    #[ignore = "needs the pinned merge_8_1.zopro key in ZOLANA_TEST_KEY_DIR"]
+    fn proves_a_typed_merge_with_the_pinned_key() {
+        use spr_client::{MergeProver, ProverExt};
+        use spr_interface::verifying_keys::merge_8_1::VERIFYINGKEY;
+        use spr_transaction::instructions::merge::MergeTransaction;
+
+        let prover = native_with_staged_keys();
+        let owner = ShieldedKeypair::new_ed25519().unwrap();
+        let mut trees = Trees::new();
+        let notes = trees.notes(&owner, 2);
+        let transaction = MergeTransaction::new(notes.clone())
+            .unwrap()
+            .with_output_tree_id(crate::fixture_trees::TREE_ID)
+            .with_expiry(u64::MAX)
+            .encrypt(&owner)
+            .unwrap();
+        let dummy_nullifier_proofs = transaction
+            .dummy_nullifiers()
+            .into_iter()
+            .map(|nullifier| trees.non_inclusion(nullifier))
+            .collect();
+        let result = MergeProver {
+            transaction,
+            nullifier_key: owner.nullifier_key.clone(),
+            proofs: trees.spend_proofs(&notes),
+            dummy_nullifier_proofs,
+            cache: None,
+        }
+        .build()
+        .unwrap();
+        assert_eq!(result.inputs.inputs.len(), 8);
+        let proof = RequireTyped(&prover).prove_merge(&result.inputs).unwrap();
+        verify_proof_statement(&proof, result.public_input_hash, &VERIFYINGKEY).unwrap();
+    }
+
+    fn native_with_staged_keys() -> NativeProver {
         let dir = std::env::var("ZOLANA_TEST_KEY_DIR").unwrap_or_else(|_| {
             std::env::temp_dir()
                 .join("zolana-mobile-keys")
                 .display()
                 .to_string()
         });
-        let prover = NativeProver::new(Arc::new(keys::KeyStore::new(
+        NativeProver::new(Arc::new(keys::KeyStore::new(
             dir,
             None,
             crate::transport::tests::unreachable(),
-        )));
-        let proof = prover
-            .prove(&Captured(transfer_2_2_key()))
-            .expect("prove the captured client request");
-        assert!(
-            proof.commitment.is_none(),
-            "the eddsa rail has no BSB22 commitment"
-        );
-        // The key's image is beside it for the next session.
-        let image = image_path(&prover.0.keys.ensure(&transfer_2_2_key()).unwrap().0);
-        assert!(image.is_file(), "{}", image.display());
-        // The same key serves the next proof without reloading.
-        prover.prove(&Captured(transfer_2_2_key())).unwrap();
+        )))
     }
 
     /// Proves every `fixtures/prove-request-<n>x<m>.json` with its pinned

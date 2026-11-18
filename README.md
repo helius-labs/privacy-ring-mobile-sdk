@@ -10,7 +10,8 @@ device. The Solana key stays with the application's signer.
 Targets the finalized ceremony keys and signed-policy protocol in
 [Zolana #521](https://github.com/helius-labs/zolana/pull/521).
 
-Pins Zolana commit `c5297afa13e8bfb6edadf6408304ef3fc2f8c676` and shielded-pool program
+Pins Zolana commit `1e2ab196252dd81fdfd7e315ee3cff51ccb5201d` with typed local proof inputs based on
+the existing protocol deployment and shielded-pool program
 `ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW`. Applications supply indexer and
 remote prover URLs with a reviewed TEE policy.
 Remote configuration requires `proverTeeNetwork` (an SDK-pinned signed policy)
@@ -101,12 +102,14 @@ cargo test -p spr-mobile proves_the_staged_request -- --ignored
 ## Rust dependencies
 
 The Flutter-facing crate pins `mopro-ffi` to `sergeytimoshin/mopro` revision
-`c1071f96fa5a28dca8e567dd3944331047450a2b`. The prover is `zopro-prover`: the
-request to the circuit's inputs, the arithmetic, and the proof verified and
-encoded as gnark's verifier reads it; gnark itself runs only offline, where
-the circuits are compiled and the keys made. Protocol crates `spr-hasher`,
-`spr-keypair`, and `spr-transaction` are pinned to one Zolana revision,
-which must be on Zolana `main`.
+`c1071f96fa5a28dca8e567dd3944331047450a2b`. Local wallet proving passes the
+SPR client's assembled transfer and merge inputs to `zopro-spr`. The wallet
+chooses and verifies its pinned key artifact, and `zopro-prover` caches its
+solver image and GPU pipelines. It maps a private snapshot of the image. The file-based and fixture APIs
+accept the existing JSON format.
+
+Release pins for SPR protocol crates use a single Zolana main revision. This
+draft uses a backport of the typed client API on the current deployment pin.
 
 ## Precompiled binaries
 

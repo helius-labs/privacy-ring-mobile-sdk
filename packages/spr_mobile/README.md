@@ -1067,7 +1067,9 @@ Only one prepared native prover is loaded at a time per process, and each
 `LocalProver` runs one proof at a time; another fails with
 `WalletError.proverBusy`, and so do the wallet's own proofs while a
 `LocalProver` is loaded. Close it before loading another key.
-The key is read once by `load`, not on every warm proof.
+`load` reuses a valid solver image beside the key and rebuilds invalid or
+stale images. The prover maps a private snapshot of that image, so modifying
+or clearing the cache cannot change a key already loaded for proving.
 `loadMs` measures preparation separately from job timings. Parsed keys are held
 until `close`; deleting or replacing their source files does not rotate an
 already-loaded prover. Close and reload explicitly to change circuit versions.
