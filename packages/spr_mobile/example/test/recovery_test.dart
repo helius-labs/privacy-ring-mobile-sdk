@@ -6,40 +6,51 @@ import 'package:zolana_mobile_demo/demo_signer.dart' show base58Encode;
 import 'package:zolana_mobile_demo/recovery.dart';
 
 void main() {
-  test(
-    'client errors keep the send until recovery finishes indexing',
-    () async {
-      final pending = MemoryPendingSends();
-      final wallet = _Wallet(pending);
-      final signer = _Signer();
-      final transaction = _Transaction();
-      final send = (
-        signature: base58Encode(signer.signature),
-        lastValidBlockHeight: transaction.lastValidBlockHeight,
-      );
-      const error = WalletError.client(
-        message: 'transaction indexing timed out',
-      );
-      wallet.error = error;
-
-      await expectLater(
-        saveAndSend(wallet, signer, pending, transaction),
-        throwsA(same(error)),
-      );
-      expect(await pending.read(wallet.solanaPublicKey), send);
-
-      await expectLater(
-        settlePendingSend(wallet, pending),
-        throwsA(same(error)),
-      );
-      expect(await pending.read(wallet.solanaPublicKey), send);
-
-      wallet.error = null;
-      expect(await settlePendingSend(wallet, pending), send.signature);
-      expect(wallet.waited, [send, send]);
-      expect(await pending.read(wallet.solanaPublicKey), isNull);
-    },
+  final signer = _Signer();
+  final transaction = _Transaction();
+  final send = (
+    signature: base58Encode(signer.signature),
+    lastValidBlockHeight: transaction.lastValidBlockHeight,
   );
+
+  test('an unknown outcome keeps the send until recovery settles it', () async {
+    final pending = MemoryPendingSends();
+    final wallet = _Wallet(pending);
+    final error = WalletError.transactionOutcomeUnknown(
+      signature: send.signature,
+      message: 'transaction not found in RPC history',
+    );
+    wallet.error = error;
+
+    await expectLater(
+      saveAndSend(wallet, signer, pending, transaction),
+      throwsA(same(error)),
+    );
+    expect(await pending.read(wallet.solanaPublicKey), send);
+
+    await expectLater(settlePendingSend(wallet, pending), throwsA(same(error)));
+    expect(await pending.read(wallet.solanaPublicKey), send);
+
+    wallet.error = null;
+    expect(await settlePendingSend(wallet, pending), send.signature);
+    expect(wallet.waited, [send, send]);
+    expect(await pending.read(wallet.solanaPublicKey), isNull);
+  });
+
+  test('a send the chain refused is not kept', () async {
+    final pending = MemoryPendingSends();
+    final wallet = _Wallet(pending);
+    const error = WalletError.client(
+      message: 'Transaction simulation failed: insufficient funds for fee',
+    );
+    wallet.error = error;
+
+    await expectLater(
+      saveAndSend(wallet, signer, pending, transaction),
+      throwsA(same(error)),
+    );
+    expect(await pending.read(wallet.solanaPublicKey), isNull);
+  });
 }
 
 class _Wallet implements SprWallet {

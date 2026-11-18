@@ -234,10 +234,7 @@ fn recovers_a_success_missing_from_the_recent_status_cache() {
         wallet.wait_for_transaction(signature.to_string(), Some(5)),
         Ok(())
     );
-    assert_eq!(
-        *asked.lock().unwrap(),
-        ["getSignatureStatuses", "getShieldedTransactionsBySignature"]
-    );
+    assert_eq!(*asked.lock().unwrap(), ["getSignatureStatuses"]);
 }
 
 #[test]
@@ -300,33 +297,66 @@ fn unrelated_or_unconfirmed_indexer_events_do_not_establish_success() {
     }
 }
 
+/// A spend Solana confirmed has landed, whether or not the indexer has it
+/// yet: `submit`, `confirm` and `wait_for_transaction` report it as such,
+/// and its notes are spent. Only that spend's reservation is released.
 #[test]
-fn historical_success_still_waits_for_indexing() {
-    let signature = Signature::from([3; 64]);
-    let (mut wallet, asked) = rpc_wallet(&Keypair::new(), |method| match method {
-        "getSignatureStatuses" => status(true),
-        "getShieldedTransactionsBySignature" => indexed(None),
-        _ => panic!("unexpected request: {method}"),
-    });
-    wallet.send_lookup = QUICK;
+fn a_landed_spend_succeeds_while_the_indexer_lags() {
+    let signer = Keypair::new();
+    let spend = |payer: &Keypair, id| PreparedTransaction {
+        id,
+        operation: Operation::Spend {
+            mint: None,
+            outputs: Vec::new(),
+            created_token_accounts: Vec::new(),
+        },
+        last_valid_block_height: u64::MAX,
+        ..unsigned(payer)
+    };
+    let signature = signer.sign_message(&spend(&signer, 0).message());
+    let landed = || {
+        let (mut wallet, asked) = rpc_wallet(&signer, move |method| match method {
+            "sendTransaction" => serde_json::json!({"result": signature.to_string()}),
+            "getSignatureStatuses" => status(true),
+            // The indexer never has the transaction.
+            "getShieldedTransactionsBySignature" => indexed(None),
+            _ => serde_json::json!({"error": {"code": -32601, "message": method}}),
+        });
+        wallet.send_lookup = QUICK;
+        let pending = wallet.reserve(spend(&signer, 0), vec![[1; 32]]).unwrap();
+        wallet
+            .reserve(spend(&Keypair::new(), 1), vec![[2; 32]])
+            .unwrap();
+        (wallet, asked, pending)
+    };
+    let spent = |wallet: &MobileWallet| {
+        let reservations = wallet.reservations();
+        let held: Vec<_> = reservations.reserved.keys().copied().collect();
+        assert_eq!(held, [1], "the landed spend's notes are spent");
+    };
+
+    let (wallet, asked, pending) = landed();
+    assert_eq!(
+        wallet.submit(&pending, vec![signature.as_ref().to_vec()]),
+        Ok(signature.to_string())
+    );
+    spent(&wallet);
+    assert!(
+        !asked
+            .lock()
+            .unwrap()
+            .contains(&"getShieldedTransactionsBySignature".to_string()),
+        "the send returns once Solana confirms it"
+    );
+
+    let (wallet, _, pending) = landed();
+    assert_eq!(wallet.confirm(&pending, signature.to_string()), Ok(()));
+    spent(&wallet);
+
+    let (wallet, _, _) = landed();
     assert_eq!(
         wallet.wait_for_transaction(signature.to_string(), Some(5)),
-        Err(ClientError::IndexerTimeout.into())
-    );
-    let asked = asked.lock().unwrap();
-    assert_eq!(
-        asked
-            .iter()
-            .filter(|method| *method == "getSignatureStatuses")
-            .count(),
-        1
-    );
-    assert_eq!(
-        asked
-            .iter()
-            .filter(|method| *method == "getShieldedTransactionsBySignature")
-            .count(),
-        QUICK.num_retries as usize + 1
+        Ok(())
     );
 }
 

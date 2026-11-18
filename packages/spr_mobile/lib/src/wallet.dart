@@ -578,10 +578,15 @@ class SprWallet {
       _serial(() => _prepare(_wallet.refresh(pending: transaction)));
 
   /// Attach [signatures] (in [PreparedTransaction.signers] order), send, and
-  /// wait as [confirm] does. Returns the transaction signature. A send that
-  /// fails without the chain's verdict, such as a lost confirmation, is
-  /// checked against RPC history and the indexer. A
-  /// note the chain already spent fails with [WalletError.notesAlreadySpent].
+  /// wait as [confirm] does. Returns the transaction signature once Solana
+  /// confirms it, whether or not the indexer has it yet: the payment has
+  /// landed, so do not send it again. The next balance, activity or spend
+  /// waits for the indexer to reach the RPC's confirmed slot, and
+  /// [SprWallet.transaction] reports
+  /// [native.TransactionLookupStatus.pendingIndexing] until the indexer has
+  /// it. A send that fails without the chain's verdict, such as a lost
+  /// confirmation, is checked against RPC history and the indexer. A note the
+  /// chain already spent fails with [WalletError.notesAlreadySpent].
   ///
   /// A spend's notes are released once the send has an outcome: spent when
   /// it landed, free for the next spend when the chain refused it or it
@@ -598,9 +603,8 @@ class SprWallet {
 
   /// Wait for a transaction the application sent itself, by its base58
   /// [signature], as [submit] waits for a send whose response was lost:
-  /// until Solana confirms it and, for shielded-pool transactions, the
-  /// indexer has it, so the next balance or spend reads the notes it created
-  /// and not the ones it spent; the chain's error when the chain refused it;
+  /// until Solana confirms it, whether or not the indexer has it yet; the
+  /// chain's error when the chain refused it;
   /// [WalletError.transactionOutcomeUnknown] when history cannot establish
   /// its outcome, even after blockhash expiry. A
   /// spend's notes are released with every outcome but the unknown one.
@@ -621,9 +625,9 @@ class SprWallet {
 
   /// Recover a shielded-pool transaction by its [signature], including after
   /// an application restart. Searches RPC history and accepts a matching
-  /// indexed event when RPC history is unavailable. Success waits for the
-  /// indexer so balances include the transaction; confirmed chain errors
-  /// are returned immediately.
+  /// indexed event when RPC history is unavailable. Returns once it is
+  /// confirmed, whether or not the indexer has it yet; confirmed chain
+  /// errors are returned immediately.
   ///
   /// Missing history returns [WalletError.transactionOutcomeUnknown], even
   /// after blockhash expiry: absence does not prove it never landed.
@@ -693,7 +697,8 @@ class SprWallet {
     ),
   );
 
-  /// [prepareSpend], signed and submitted by this account.
+  /// [prepareSpend], signed and submitted by this account. Returns the
+  /// signature once Solana confirms the spend, as [submit] does.
   Future<String> spend({
     required List<native.Output> outputs,
     String? mint,
