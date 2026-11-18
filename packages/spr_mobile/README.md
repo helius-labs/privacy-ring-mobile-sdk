@@ -77,8 +77,10 @@ this repository:
   package's build hook links the library into `mopro_flutter_bindings.framework`,
   which Flutter bundles with the app.
 
-Each file is signed. Cargokit checks the signature with the Ed25519 public key
-in `rust/cargokit.yaml` and ignores a file with an invalid signature.
+Each file is signed together with the crate hash and its file name, which names
+the target. Cargokit checks the signature with the Ed25519 public key in
+`rust/cargokit.yaml` and ignores a file with an invalid signature, or one signed
+for another release or target.
 
 The release name contains a hash of the Rust sources of the plugin. If no
 release matches the sources, for example after a local change, the plugin builds

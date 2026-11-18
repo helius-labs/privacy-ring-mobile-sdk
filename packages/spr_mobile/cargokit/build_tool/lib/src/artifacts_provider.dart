@@ -3,10 +3,10 @@
 
 import 'dart:io';
 
-import 'package:ed25519_edwards/ed25519_edwards.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 
+import 'binary_signature.dart';
 import 'builder.dart';
 import 'crate_hash.dart';
 import 'download.dart';
@@ -192,8 +192,13 @@ class ArtifactProvider {
       _log.severe('Failed to download binary $url: status ${res.statusCode}');
       return;
     }
-    if (verify(
-        precompiledBinaries.publicKey, res.bodyBytes, signature.bodyBytes)) {
+    if (verifyBinary(
+      precompiledBinaries.publicKey,
+      crateHash: crateHash,
+      fileName: fileName,
+      binary: res.bodyBytes,
+      signature: signature.bodyBytes,
+    )) {
       File(finalPath).writeAsBytesSync(res.bodyBytes);
     } else {
       _log.shout('Signature verification failed! Ignoring binary.');

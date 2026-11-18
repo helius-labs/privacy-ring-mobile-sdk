@@ -3,10 +3,10 @@
 
 import 'dart:io';
 
-import 'package:ed25519_edwards/ed25519_edwards.dart';
 import 'package:http/http.dart';
 
 import 'artifacts_provider.dart';
+import 'binary_signature.dart';
 import 'cargo.dart';
 import 'crate_hash.dart';
 import 'options.dart';
@@ -68,8 +68,13 @@ class VerifyBinaries {
             break;
           }
 
-          if (!verify(precompiledBinaries.publicKey, asset.bodyBytes,
-              signature.bodyBytes)) {
+          if (!verifyBinary(
+            precompiledBinaries.publicKey,
+            crateHash: crateHash,
+            fileName: fileName,
+            binary: asset.bodyBytes,
+            signature: signature.bodyBytes,
+          )) {
             stdout.writeln('INVALID SIGNATURE');
             ok = false;
           }
