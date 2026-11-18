@@ -1,0 +1,29 @@
+[package]
+name = "spr-local-prover"
+version = "0.1.0"
+description = "On-device SPR proving runtime for Rust applications."
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/helius-labs/privacy-ring-mobile-sdk"
+publish = false
+
+[features]
+device-allocator = []
+zopro-trace = ["zopro-spr/trace"]
+
+[dependencies]
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8" }
+log = "0.4"
+memmap2 = "0.9"
+thiserror = "2"
+zeroize = "1.9"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["metal"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+oslog = "0.2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
+zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["wgpu"] }

@@ -551,7 +551,7 @@ impl KeyStore {
         if !matches_entry(name, &path, entry)? {
             // A key that is replaced takes its image with it.
             let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(crate::prover::image_path(&path));
+            let _ = fs::remove_file(spr_local_prover::image_path(&path));
             self.create_dir()?;
             if !self.download(name, entry, &path, progress)? {
                 return Ok(None);
@@ -1334,15 +1334,7 @@ mod tests {
             .fetch("k.key", &entry, &mut |_| true)
             .unwrap()
             .unwrap();
-        let image = crate::prover::image_path(&path);
-        assert_eq!(
-            image,
-            root.join(key_set()).join(format!(
-                "k.key.{}.solver{}",
-                zopro_spr::zopro_prover::raw::FORMAT,
-                zopro_spr::zopro_core::solver_image_version()
-            ))
-        );
+        let image = spr_local_prover::image_path(&path);
         fs::write(&image, b"image").unwrap();
 
         fs::remove_file(Verified::path(&path)).unwrap();

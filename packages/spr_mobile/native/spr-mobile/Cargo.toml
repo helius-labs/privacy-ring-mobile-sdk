@@ -12,7 +12,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
 # zopro's stage timings in the device log (the Device Farm bench).
-zopro-trace = ["zopro-spr/trace"]
+zopro-trace = ["spr-local-prover/zopro-trace"]
 default = []
 flutter = ["dep:mopro-ffi", "mopro-ffi/flutter"]
 
@@ -28,12 +28,8 @@ mopro-ffi = { git = "https://github.com/sergeytimoshin/mopro", rev = "c1071f96fa
 # Only its types: the wallet sends through the application's transport.
 reqwest = { version = "0.12", default-features = false }
 reqwest-middleware = "0.4"
-# The prover: the request to a witness, the arithmetic (on the GPU where
-# there is one), the verified proof in gnark's formats.
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8" }
+spr-local-prover = { path = "../spr-local-prover", features = ["device-allocator"] }
 log = "0.4"
-# The key's image, mapped (prover::load_key).
-memmap2 = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 solana-account = "4.3"
 solana-commitment-config = "3.1"
@@ -59,16 +55,6 @@ spr-api = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bf
 spr-client = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676", features = ["client"] }
 spr-transaction = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
 spr-user-registry-interface = { git = "https://github.com/helius-labs/zolana", rev = "c5297afa13e8bfb6edadf6408304ef3fc2f8c676" }
-
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["metal"] }
-
-[target.'cfg(target_os = "ios")'.dependencies]
-oslog = "0.2"
-
-[target.'cfg(target_os = "android")'.dependencies]
-android_logger = "0.15"
-zopro-spr = { git = "https://github.com/helius-labs/zk-tools.git", rev = "fac2a2b5d9e000ef2c13649492d4b4c33f9b25a8", features = ["wgpu"] }
 
 [dev-dependencies]
 base64 = "0.22"

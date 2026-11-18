@@ -1,17 +1,12 @@
 //! Where the wallet proves a spend: on the device with its own [`Prover`], or
 //! with the Zolana SDK's prover client through the application's transport.
 
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 
 use spr_client::{prover::ExpectedProvingKey, ClientError, Proof, ProveRequest, Prover};
+use spr_local_prover::ProverSession;
 
-use crate::{elapsed_ms, error::WalletError, keys, Loaded, ProvedRequest, PREPARED};
+use crate::{elapsed_ms, error::WalletError, keys, ProvedRequest};
 
 /// Where a spend is proved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,117 +28,7 @@ pub(crate) struct NativeProver(Arc<Native>);
 
 struct Native {
     keys: Arc<keys::KeyStore>,
-    /// Id of the key this prover loaded last; 0 before the first.
-    loaded: AtomicU64,
-}
-
-/// The prover's log lines into the device log: warnings (a GPU proof that
-/// failed to verify), and with the zopro-trace feature the stage timings
-/// the Device Farm bench reads.
-fn device_log() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        #[cfg(target_os = "ios")]
-        let _ = oslog::OsLogger::new("zolana.zopro")
-            .level_filter(if cfg!(feature = "zopro-trace") {
-                log::LevelFilter::Info
-            } else {
-                log::LevelFilter::Warn
-            })
-            .init();
-        #[cfg(target_os = "android")]
-        android_logger::init_once(
-            android_logger::Config::default()
-                .with_max_level(if cfg!(feature = "zopro-trace") {
-                    log::LevelFilter::Info
-                } else {
-                    log::LevelFilter::Warn
-                })
-                .with_tag("zopro"),
-        );
-    });
-}
-
-/// Where a key file's image is kept (`zopro_prover::raw`): the key's
-/// points as the kernel reads them in place and its solver's image, written
-/// at the key's first load and mapped at every load, so the system may drop
-/// and read again the points' pages under memory pressure instead of the
-/// app holding them, and a load decompresses nothing (16 -> 2 on a phone:
-/// 0.4 s rather than 8.6, ~140 MB of the app's own memory rather than
-/// ~360). The name carries both layouts' versions: a kernel that reads
-/// another writes its own.
-pub(crate) fn image_path(key: &std::path::Path) -> std::path::PathBuf {
-    let mut name = key
-        .file_name()
-        .map(|n| n.to_os_string())
-        .unwrap_or_default();
-    name.push(format!(
-        ".{}.solver{}",
-        zopro_spr::zopro_prover::raw::FORMAT,
-        zopro_spr::zopro_core::solver_image_version()
-    ));
-    key.with_file_name(name)
-}
-
-/// A key file loaded through its image: mapped, written from the key file
-/// first when there is none or it does not load. A device that cannot
-/// write it (a full disk) proves from the key file in memory.
-pub(crate) fn load_key(path: &std::path::Path) -> Result<zopro_spr::Prover, WalletError> {
-    device_log();
-    let failed = |e: &dyn std::fmt::Display| {
-        log::warn!("zopro: {}: {e}", path.display());
-        WalletError::ProverLoadFailed
-    };
-    // The GPU driver's compiled kernels, beside the keys: a phone compiles
-    // them once rather than at every launch.
-    zopro_spr::zopro_core::set_gpu_pipeline_cache(&path.with_file_name("zopro-gpu.cache"));
-    let image = image_path(path);
-    if image.is_file() {
-        match load_image(&image) {
-            Ok(prover) => return Ok(prover),
-            Err(e) => log::warn!("zopro: {}: {e}; written again", image.display()),
-        }
-    }
-    match write_image(path, &image).and_then(|()| load_image(&image)) {
-        Ok(prover) => Ok(prover),
-        Err(e) => {
-            log::warn!("zopro: {}: {e}; proving from the key file", image.display());
-            let _ = std::fs::remove_file(&image);
-            let key = map(path).map_err(|e| failed(&e))?;
-            zopro_spr::Prover::load(&key).map_err(|e| failed(&e))
-        }
-    }
-}
-
-/// `path` mapped read-only. The store writes keys and images beside and
-/// renames them into place, so a mapped file is never written.
-fn map(path: &std::path::Path) -> Result<memmap2::Mmap, String> {
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    // SAFETY: nothing writes or truncates the file in place (see above).
-    unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())
-}
-
-fn load_image(image: &std::path::Path) -> Result<zopro_spr::Prover, String> {
-    let prover = zopro_spr::zopro_prover::Prover::load_image(std::sync::Arc::new(map(image)?))?;
-    zopro_spr::Prover::new(prover)
-}
-
-/// The key's image, whole or absent: written beside, then renamed.
-fn write_image(key: &std::path::Path, image: &std::path::Path) -> Result<(), String> {
-    let key = map(key)?;
-    let partial = image.with_extension("partial");
-    let written = (|| -> Result<(), String> {
-        let file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
-        let mut out = std::io::BufWriter::new(file);
-        zopro_spr::zopro_prover::Prover::write_image(&key, &mut out)?;
-        let file = out.into_inner().map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        std::fs::rename(&partial, image).map_err(|e| e.to_string())
-    })();
-    if written.is_err() {
-        let _ = std::fs::remove_file(&partial);
-    }
-    written
+    session: ProverSession,
 }
 
 /// Why a proof on the device failed, carried through the client as
@@ -163,31 +48,12 @@ impl NativeProver {
     pub(crate) fn new(keys: Arc<keys::KeyStore>) -> Self {
         Self(Arc::new(Native {
             keys,
-            loaded: AtomicU64::new(0),
+            session: ProverSession::default(),
         }))
     }
 
     fn prove_json(&self, body: &str, key: &ExpectedProvingKey) -> Result<String, WalletError> {
         Ok(self.prove_request(body, key)?.proof_json)
-    }
-
-    /// Loads a key in place of the loaded one (a phone has room for one).
-    fn load(
-        &self,
-        state: &mut crate::ProverState,
-        name: &str,
-        path: &std::path::Path,
-    ) -> Result<(), WalletError> {
-        state.loaded = None;
-        let prover = load_key(path)?;
-        let id = state.next_id()?;
-        self.0.loaded.store(id, Ordering::Relaxed);
-        state.loaded = Some(Loaded {
-            id,
-            key: Some(name.to_string()),
-            prover,
-        });
-        Ok(())
     }
 
     /// Prove `body` with `key`, fetched and loaded as needed, and say where
@@ -198,56 +64,20 @@ impl NativeProver {
         key: &ExpectedProvingKey,
     ) -> Result<ProvedRequest, WalletError> {
         let started = Instant::now();
-        let name = key.name.as_str();
         let (path, downloaded_bytes) = self.0.keys.ensure(key)?;
         let download_ms = elapsed_ms(started);
-        let mut state = PREPARED
-            .lock()
-            .map_err(|_| WalletError::ProverUnavailable)?;
-        let loading = Instant::now();
-        let loaded_key = state.loaded.as_ref().map(|loaded| loaded.key.as_deref());
-        if loaded_key != Some(Some(name)) {
-            if loaded_key == Some(None) {
-                // The application holds its own key; leave it.
-                return Err(WalletError::ProverBusy);
-            }
-            self.load(&mut state, name, &path)?;
-        }
-        let load_ms = elapsed_ms(loading);
-        let loaded = state.loaded.as_mut().ok_or(WalletError::ProverClosed)?;
-        let proof = loaded.prover.prove(body).map_err(|error| match error {
-            zopro_spr::Error::Unsupported => WalletError::UnsupportedCircuit,
-            zopro_spr::Error::Prove(message) => {
-                log::warn!("zopro: {name}: {message}");
-                WalletError::ProofFailed
-            }
-            _ => WalletError::ProofFailed,
-        })?;
+        let (proof, load_ms) = self.0.session.prove(body, &path)?;
         Ok(ProvedRequest {
-            proof_json: proof.proof_json.to_string(),
-            key: name.to_string(),
+            proof_json: proof.proof_json,
+            key: key.name.clone(),
             downloaded_bytes,
             download_ms,
             load_ms,
             witness_ms: proof.witness_ms,
-            prove_ms: proof.prove_ms,
+            prove_ms: proof.proof_ms,
             verify_ms: proof.verify_ms,
             total_ms: elapsed_ms(started),
         })
-    }
-}
-
-/// A closed wallet releases the proving key it loaded, unless another prover
-/// has replaced it since.
-impl Drop for Native {
-    fn drop(&mut self) {
-        let id = *self.loaded.get_mut();
-        let Ok(mut state) = PREPARED.lock() else {
-            return;
-        };
-        if state.loaded.as_ref().is_some_and(|loaded| loaded.id == id) {
-            state.loaded = None;
-        }
     }
 }
 
@@ -673,6 +503,14 @@ mod tests {
             None,
             crate::transport::tests::unreachable(),
         )));
+        let key = transfer_2_2_key();
+        let path = prover.0.keys.ensure(&key).unwrap().0;
+        let standalone = crate::LocalProver::load(path.display().to_string()).unwrap();
+        assert!(matches!(
+            prover.prove_request(REQUEST, &key),
+            Err(WalletError::ProverBusy)
+        ));
+        standalone.close();
         let proof = prover
             .prove(&Captured(transfer_2_2_key()))
             .expect("prove the captured client request");
@@ -681,7 +519,7 @@ mod tests {
             "the eddsa rail has no BSB22 commitment"
         );
         // The key's image is beside it for the next session.
-        let image = image_path(&prover.0.keys.ensure(&transfer_2_2_key()).unwrap().0);
+        let image = spr_local_prover::image_path(&path);
         assert!(image.is_file(), "{}", image.display());
         // The same key serves the next proof without reloading.
         prover.prove(&Captured(transfer_2_2_key())).unwrap();

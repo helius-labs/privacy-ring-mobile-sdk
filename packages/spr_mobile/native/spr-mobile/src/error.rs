@@ -352,3 +352,17 @@ mod tests {
         ));
     }
 }
+
+impl From<spr_local_prover::ProverError> for WalletError {
+    fn from(error: spr_local_prover::ProverError) -> Self {
+        use spr_local_prover::ProverError;
+        match error {
+            ProverError::Busy => Self::ProverBusy,
+            ProverError::Closed => Self::ProverClosed,
+            ProverError::Unavailable => Self::ProverUnavailable,
+            ProverError::LoadFailed => Self::ProverLoadFailed,
+            ProverError::UnsupportedCircuit => Self::UnsupportedCircuit,
+            ProverError::ProofFailed => Self::ProofFailed,
+        }
+    }
+}

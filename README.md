@@ -22,7 +22,9 @@ notes and pending transactions require their matching SDK and deployment.
 ## Layout
 
 - `packages/spr_mobile/native/spr-mobile`: the native wallet, the
-  on-device prover and the proving-key store.
+  protocol-client adapters and the proving-key store.
+- `packages/spr_mobile/native/spr-local-prover`: the standalone Rust crate for
+  on-device proving with zopro and one loaded key per process.
 - `packages/spr_mobile`: the Flutter plugin, and an example devnet wallet.
 - `fixtures`: a 2→2 `/prove` request built with the Zolana prover's test
   helpers, and the Helius prover's response to it.
@@ -113,7 +115,7 @@ which must be on Zolana `main`.
 The `Precompiled binaries` workflow runs on every push to `main`:
 
 1. It computes the crate hash of `packages/spr_mobile/rust` and its path
-   dependency `native/spr-mobile`.
+   dependencies under `native/`.
 2. It builds the library for Android (`aarch64`, `armv7`, `x86_64`) and iOS
    (device, `arm64` and `x86_64` simulator).
 3. It signs every file and uploads it to the release `precompiled_<hash>`.

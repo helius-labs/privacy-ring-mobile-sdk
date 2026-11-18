@@ -1,20 +1,6 @@
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex, PoisonError,
-    },
-    time::Instant,
-};
-
-use zeroize::Zeroizing;
+use std::{path::Path, time::Instant};
 
 use spr_hasher::{Hasher, Poseidon};
-
-// On Apple's systems a freed large block stays charged to the app with the
-// system allocator; zopro's gives it back (a key's first load left 200 MB
-// charged on an iPad). Elsewhere it is the system allocator.
-#[global_allocator]
-static ALLOCATOR: zopro_spr::zopro_core::alloc::Allocator = zopro_spr::zopro_core::alloc::Allocator;
 
 mod activity;
 mod asset;
@@ -40,34 +26,6 @@ pub use wallet::{
     PreparedTransaction, RegistrationStatus, SpendLimit, SpendableNote, TokenBalance,
     UnresolvedAssets, WalletConfig, WalletKeys, WalletOverview,
 };
-
-static PREPARED: Mutex<ProverState> = Mutex::new(ProverState {
-    next_id: 1,
-    loaded: None,
-});
-
-/// The one proving key loaded at a time: a phone has room for one.
-struct ProverState {
-    next_id: u64,
-    loaded: Option<Loaded>,
-}
-
-struct Loaded {
-    id: u64,
-    /// The lockfile key [`prover::NativeProver`] loaded, or `None` for a key
-    /// the application loaded itself as a [`LocalProver`]. The native prover
-    /// switches keys only in the first case.
-    key: Option<String>,
-    prover: zopro_spr::Prover,
-}
-
-impl ProverState {
-    fn next_id(&mut self) -> Result<u64, WalletError> {
-        let id = self.next_id;
-        self.next_id = id.checked_add(1).ok_or(WalletError::ProverUnavailable)?;
-        Ok(id)
-    }
-}
 
 /// A proof of a `/prove` request through the wallet's key store, by
 /// [`ProvingKeys::prove`], and where its time went. Milliseconds; the
@@ -135,38 +93,22 @@ pub struct LocalProofResult {
 /// One key is loaded at a time: while this one is, the wallet's own proofs
 /// fail with `prover_busy`, so close it before the wallet proves.
 pub struct LocalProver {
-    id: u64,
-    load_ms: u64,
-    closed: AtomicBool,
+    inner: spr_local_prover::LocalProver,
 }
 
 impl LocalProver {
     /// Load the zopro key at `key_path`. Fails with `prover_busy` while
     /// another key is loaded or proving.
     pub fn load(key_path: String) -> Result<LocalProver, WalletError> {
-        let started = Instant::now();
-        let mut state = PREPARED.try_lock().map_err(|_| WalletError::ProverBusy)?;
-        if state.loaded.is_some() {
-            return Err(WalletError::ProverBusy);
-        }
-        let id = state.next_id()?;
-        let prover = prover::load_key(std::path::Path::new(&key_path))?;
-        state.loaded = Some(Loaded {
-            id,
-            key: None,
-            prover,
-        });
-        Ok(LocalProver {
-            id,
-            load_ms: elapsed_ms(started),
-            closed: AtomicBool::new(false),
+        Ok(Self {
+            inner: spr_local_prover::LocalProver::load(Path::new(&key_path))?,
         })
     }
 
     /// How long loading the key took.
     #[flutter_rust_bridge::frb(sync, getter)]
     pub fn load_ms(&self) -> u64 {
-        self.load_ms
+        self.inner.load_ms()
     }
 
     /// Prove `request_json`, a Zolana `/prove` request; the proof is
@@ -174,63 +116,23 @@ impl LocalProver {
     /// Fails with `prover_closed` after `close`, also when the close came
     /// while this proof ran.
     pub fn prove(&self, request_json: String) -> Result<LocalProofResult, WalletError> {
-        let request_json = Zeroizing::new(request_json);
-        let started = Instant::now();
-        if self.closed.load(Ordering::Acquire) {
-            return Err(WalletError::ProverClosed);
-        }
-        let mut state = PREPARED.try_lock().map_err(|_| WalletError::ProverBusy)?;
-        let loaded = state
-            .loaded
-            .as_mut()
-            .filter(|loaded| loaded.id == self.id)
-            .ok_or(WalletError::ProverClosed)?;
-        let (inputs, outputs) = loaded.prover.shape();
-        let proof = loaded.prover.prove(&request_json);
-        if self.closed.load(Ordering::Acquire) {
-            state.loaded = None;
-            return Err(WalletError::ProverClosed);
-        }
-        let proof = proof.map_err(|error| match error {
-            zopro_spr::Error::Unsupported | zopro_spr::Error::Shape => {
-                WalletError::UnsupportedCircuit
-            }
-            _ => WalletError::ProofFailed,
-        })?;
+        let proof = self.inner.prove(request_json)?;
         Ok(LocalProofResult {
-            proof_json: proof.proof_json.to_string(),
-            verified: true,
-            inputs,
-            outputs,
-            proof_ms: proof.prove_ms,
+            proof_json: proof.proof_json,
+            verified: proof.verified,
+            inputs: proof.inputs,
+            outputs: proof.outputs,
+            proof_ms: proof.proof_ms,
             witness_ms: proof.witness_ms,
             verify_ms: proof.verify_ms,
-            total_ms: elapsed_ms(started),
+            total_ms: proof.total_ms,
         })
     }
 
     /// Release the key, after the proof in progress, which then fails with
     /// `prover_closed`. Later proofs fail the same way.
     pub fn close(&self) {
-        self.closed.store(true, Ordering::Release);
-        self.release();
-    }
-
-    fn release(&self) {
-        let mut state = PREPARED.lock().unwrap_or_else(PoisonError::into_inner);
-        if state
-            .loaded
-            .as_ref()
-            .is_some_and(|loaded| loaded.id == self.id)
-        {
-            state.loaded = None;
-        }
-    }
-}
-
-impl Drop for LocalProver {
-    fn drop(&mut self) {
-        self.release();
+        self.inner.close();
     }
 }
 

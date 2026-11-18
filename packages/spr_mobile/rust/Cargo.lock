@@ -5623,10 +5623,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "spr-mobile"
+name = "spr-local-prover"
 version = "0.1.0"
 dependencies = [
  "android_logger",
+ "log",
+ "memmap2",
+ "oslog",
+ "thiserror 2.0.20",
+ "zeroize",
+ "zopro-spr",
+]
+
+[[package]]
+name = "spr-mobile"
+version = "0.1.0"
+dependencies = [
  "async-trait",
  "bytemuck",
  "flutter_rust_bridge",
@@ -5635,9 +5647,7 @@ dependencies = [
  "hmac 0.12.1",
  "http",
  "log",
- "memmap2",
  "mopro-ffi",
- "oslog",
  "reqwest",
  "reqwest-middleware",
  "serde",
@@ -5660,12 +5670,12 @@ dependencies = [
  "spr-hasher",
  "spr-interface",
  "spr-keypair",
+ "spr-local-prover",
  "spr-program",
  "spr-transaction",
  "spr-user-registry-interface",
  "wincode",
  "zeroize",
- "zopro-spr",
 ]
 
 [[package]]

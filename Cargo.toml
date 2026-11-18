@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "packages/spr_mobile/native/spr-local-prover",
     "packages/spr_mobile/native/spr-mobile",
     "packages/spr_mobile/example/backend",
 ]
