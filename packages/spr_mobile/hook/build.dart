@@ -15,11 +15,10 @@ const _library = 'mopro_flutter_bindings';
 /// it. Neither CocoaPods nor Swift Package Manager builds it, so an app builds
 /// with either of them.
 ///
-/// Cargokit provides the Rust static library with the Go prover archive in
-/// it: the signed precompiled library of the crate hash, or a build of the
-/// crate when the release has none. This hook links it into the dynamic
-/// library. Android builds the library through the Gradle plugin of cargokit
-/// and has nothing to do here.
+/// Cargokit provides the Rust static library: the signed precompiled library
+/// of the crate hash, or a build of the crate when the release has none. This
+/// hook links it into the dynamic library. Android builds the library through
+/// the Gradle plugin of cargokit and has nothing to do here.
 void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
@@ -77,14 +76,10 @@ void main(List<String> args) async {
       '-install_name',
       '@rpath/lib$_library.dylib',
       '-Wl,-force_load,${staticDir.resolve('lib$_library.a').toFilePath()}',
-      // What the Go runtime of the prover needs.
+      // What zopro's Metal driver needs: the metal crate's CoreFoundation
+      // calls, and the Foundation classes it looks up at run time.
       '-framework',
       'CoreFoundation',
-      '-framework',
-      'Security',
-      '-lresolv',
-      '-lc++',
-      // What zopro's Metal driver needs.
       '-framework',
       'Foundation',
       '-framework',

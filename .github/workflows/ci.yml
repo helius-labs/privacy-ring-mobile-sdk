@@ -201,7 +201,7 @@ jobs:
   # When the release for the crate hash has the iOS binaries, cargokit builds
   # nothing: the macOS jobs then skip the compiler cache, which they would not
   # use. Flutter's debug pods build every simulator architecture unless ARCHS
-  # is set, so each job builds one and checks its iOS 16 minimum: ios the
+  # is set, so each job builds one and checks its iOS 15 minimum: ios the
   # runner's arm64, which its simulator runs, and ios-example x86_64.
   ios:
     runs-on: macos-latest
@@ -253,10 +253,10 @@ jobs:
       - name: Run clean consumer on an iOS simulator
         timeout-minutes: 85
         run: bash scripts/test-ios-simulator.sh
-      - name: Check that the native library runs on iOS 16
+      - name: Check that the native library runs on iOS 15
         run: |
           for archive in "$ZOLANA_CONSUMER_DIR"/consumer/.dart_tool/hooks_runner/shared/spr_mobile/build/*/static/libmopro_flutter_bindings.a; do
-            bash scripts/check-ios-minimum.sh "$archive" 16.0
+            bash scripts/check-ios-minimum.sh "$archive" 15.0
           done
       # Saved after a green test, as in the Android emulator jobs.
       - if: steps.precompiled.outputs.found != 'true' && steps.native-cache.outputs.cache-hit != 'true'
@@ -328,10 +328,10 @@ jobs:
         env:
           FLUTTER_XCODE_ARCHS: x86_64
           FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
-      - name: Check that the native library runs on iOS 16
+      - name: Check that the native library runs on iOS 15
         run: |
           for archive in packages/spr_mobile/example/.dart_tool/hooks_runner/shared/spr_mobile/build/*/static/libmopro_flutter_bindings.a; do
-            bash scripts/check-ios-minimum.sh "$archive" 16.0
+            bash scripts/check-ios-minimum.sh "$archive" 15.0
           done
       # App Store Connect rejects a framework whose binary needs a newer iOS
       # than its Info.plist names (ITMS-90208).

@@ -35,18 +35,18 @@ name = "b"
 c = { path = "../c" }
 ''');
     write('c/Cargo.toml', '[package]\nname = "c"\n');
-    write('c/go/main.go', 'package main\n');
+    write('c/csrc/c.c', 'int c(void);\n');
     final initial = hash('a');
 
     write('b/target/out', 'build output');
     write('c/.cache/out', 'hidden');
     expect(hash('a'), initial);
 
-    write('c/go/main.go', 'package main\n\nfunc main() {}\n');
+    write('c/csrc/c.c', 'int c(void) { return 0; }\n');
     expect(hash('a'), isNot(initial));
 
-    write('c/go/main.go', 'package main\n');
-    write('c/go/other.go', '');
+    write('c/csrc/c.c', 'int c(void);\n');
+    write('c/csrc/other.c', '');
     expect(hash('a'), isNot(initial));
   });
 

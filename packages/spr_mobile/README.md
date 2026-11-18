@@ -52,7 +52,7 @@ own signer and mainnet endpoints when selecting `ProverTeeNetwork.mainnet`.
   or CocoaPods.
 - Android API 24 or newer and iOS 15 or newer, the Flutter minimums. CI runs
   the clean consumer on Android API 26 and 35 emulators, and checks that every
-  object in the iOS native library runs on iOS 16.
+  object in the iOS native library runs on iOS 15.
 - A zopro key (`<key>.zopro`) from a trusted, checksum-verified release for
   each shape proved with `LocalProver`; the wallet downloads its own, pinned
   by its lockfile. Do not load keys supplied by an untrusted proof request.
@@ -1086,10 +1086,10 @@ the same way. It is idempotent. Already-delivered results cannot be revoked:
 always check the current wallet session/approval immediately before accepting
 a proof or signing/submitting.
 
-Inputs are copied across Dart, Rust, and Go. Do not pass borrowed pointers to
+Inputs are copied across Dart and Rust. Do not pass borrowed pointers to
 wallet-owned memory. You may clear caller-owned buffers once you no longer need
 them, but that does not erase copies already passed to the prover. Dart strings
-and Go/FFI temporaries cannot provide a complete secure-erasure guarantee.
+and FFI temporaries cannot provide a complete secure-erasure guarantee.
 Completion and `close()` mean no more SDK work uses the proof; they do not prove
 that every secret byte has been overwritten. Immediate native cancellation and
 guaranteed memory erasure on lock are not supported.
