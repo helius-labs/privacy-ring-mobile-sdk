@@ -1,10 +1,11 @@
 use super::*;
 
-/// A deposit is one instruction this account pays for and signs, and the
-/// operation names what it moves.
+/// A sponsored deposit keeps the owner as depositor and has the sponsor pay
+/// the network fee; the prepared message lists both signers.
 #[test]
 fn a_deposit_is_one_instruction_this_account_signs() {
     let signer = Keypair::new();
+    let sponsor = Keypair::new();
     let (mut wallet, _) = rpc_wallet(&signer, |method| match method {
         "getLatestBlockhash" => serde_json::json!({"result": {
             "context": {"slot": 1},
@@ -15,7 +16,9 @@ fn a_deposit_is_one_instruction_this_account_signs() {
         }}),
         _ => serde_json::json!({"error": {"code": -32603, "message": "unexpected"}}),
     });
-    let pending = wallet.prepare_deposit(None, 100, None).unwrap();
+    let pending = wallet
+        .prepare_deposit(None, 100, None, Some(sponsor.pubkey().to_string()))
+        .unwrap();
     assert_eq!(
         pending.operation(),
         Operation::Deposit {
@@ -25,7 +28,11 @@ fn a_deposit_is_one_instruction_this_account_signs() {
         }
     );
     assert_eq!(pending.message.instructions().len(), 1);
-    assert_eq!(pending.signers(), [signer.pubkey().to_string()]);
+    assert_eq!(pending.fee_payer(), sponsor.pubkey().to_string());
+    assert_eq!(
+        pending.signers(),
+        [sponsor.pubkey().to_string(), signer.pubkey().to_string()]
+    );
     assert_eq!(pending.last_valid_block_height(), 9);
 }
 
@@ -35,10 +42,16 @@ fn a_deposit_is_one_instruction_this_account_signs() {
 #[test]
 fn a_first_token_deposit_creates_the_mints_registry_entry_and_vault() {
     let signer = Keypair::new();
+    let sponsor = Keypair::new();
     let other = Keypair::new().pubkey();
     let deposit = |registry, config| {
         let (mut wallet, _) = token_wallet(&signer, registry, config);
-        wallet.prepare_deposit(Some(MINT.to_string()), 100, None)
+        wallet.prepare_deposit(
+            Some(MINT.to_string()),
+            100,
+            None,
+            Some(sponsor.pubkey().to_string()),
+        )
     };
     let registered = account(
         PROGRAM_ID_PUBKEY,
@@ -78,8 +91,14 @@ fn a_first_token_deposit_creates_the_mints_registry_entry_and_vault() {
                 create.data,
                 [spr_interface::instruction::tag::CREATE_SPL_INTERFACE]
             );
+            // The create instruction's authority remains the rent payer.
+            assert_eq!(keys[usize::from(create.accounts[0])], signer.pubkey());
         }
-        assert_eq!(pending.signers(), [signer.pubkey().to_string()]);
+        assert_eq!(pending.fee_payer(), sponsor.pubkey().to_string());
+        assert_eq!(
+            pending.signers(),
+            [sponsor.pubkey().to_string(), signer.pubkey().to_string()]
+        );
     }
 }
 
@@ -95,7 +114,7 @@ fn a_first_token_deposit_the_pool_restricts_is_refused_before_the_blockhash() {
     );
     assert_eq!(
         wallet
-            .prepare_deposit(Some(MINT.to_string()), 100, None)
+            .prepare_deposit(Some(MINT.to_string()), 100, None, None)
             .err(),
         Some(WalletError::AssetNotSupported {
             mint: MINT.to_string()
@@ -108,7 +127,7 @@ fn a_first_token_deposit_the_pool_restricts_is_refused_before_the_blockhash() {
         .any(|method| method == "getLatestBlockhash"));
     let (mut wallet, _) = token_wallet(&signer, serde_json::Value::Null, serde_json::Value::Null);
     assert!(matches!(
-        wallet.prepare_deposit(Some(MINT.to_string()), 100, None),
+        wallet.prepare_deposit(Some(MINT.to_string()), 100, None, None),
         Err(WalletError::Client { message }) if message.contains("protocol config")
     ));
 }

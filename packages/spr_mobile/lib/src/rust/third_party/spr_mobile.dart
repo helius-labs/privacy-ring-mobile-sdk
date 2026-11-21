@@ -168,16 +168,16 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// its own private balance. Deposits carry no proof.
   ///
   /// The first deposit of a mint into the pool creates the mint's registry
-  /// entry and vault in the same transaction, signed and paid for by this
-  /// account; [`Operation::Deposit`] says so. A pool whose protocol config
-  /// lets only its authority create them refuses with
-  /// [`WalletError::AssetNotSupported`] before the blockhash is read. Two
-  /// first deposits of one mint prepared at the same time both create
-  /// them, so the second to land fails.
+  /// entry and vault in the same transaction. The wallet remains the create
+  /// instruction's authority and pays their rent; [`Operation::Deposit`] says
+  /// whether this setup is included. `feePayer` pays the network fee, this
+  /// account when omitted. A pool whose protocol config lets only its
+  /// authority create them refuses with [`WalletError::AssetNotSupported`].
   Future<PreparedTransaction> prepareDeposit({
     String? mint,
     required BigInt amount,
     BigInt? priorityFeeLamports,
+    String? feePayer,
   });
 
   /// Build and prove a merge of the smallest notes of `mint` (SOL for
@@ -221,9 +221,14 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// `PoseidonCtrV1` in the same message, after register. `None` and
   /// `Some(false)` leave merging disabled. An existing registration is
   /// still a no-op; use [`Self::prepare_merging`] to change its scheme.
+  /// `feePayer` pays the transaction fee and new user-record rent, this
+  /// account when omitted. The owner still signs. Use
+  /// [`PreparedTransaction.signers`] and [`PreparedTransaction.feePayer`] to
+  /// show the sponsor and required signer order before approval.
   Future<PreparedTransaction?> prepareRegistration({
     BigInt? priorityFeeLamports,
     bool? enableMerging,
+    String? feePayer,
   });
 
   /// Build and prove a spend of `mint` (SOL for `None`) to `outputs`, in

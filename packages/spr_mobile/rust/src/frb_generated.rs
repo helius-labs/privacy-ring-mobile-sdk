@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 225393842;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 225393843;
 
 // Section: executor
 
@@ -1072,6 +1072,7 @@ fn wire__spr_mobile__MobileWallet_prepare_deposit_impl(
             let api_mint = <Option<String>>::sse_decode(&mut deserializer);
             let api_amount = <u64>::sse_decode(&mut deserializer);
             let api_priority_fee_lamports = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_fee_payer = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, spr_mobile::WalletError>((move || {
@@ -1094,6 +1095,7 @@ fn wire__spr_mobile__MobileWallet_prepare_deposit_impl(
                         api_mint,
                         api_amount,
                         api_priority_fee_lamports,
+                        api_fee_payer,
                     )?;
                     Ok(output_ok)
                 })())
@@ -1244,6 +1246,7 @@ fn wire__spr_mobile__MobileWallet_prepare_registration_impl(
             >>::sse_decode(&mut deserializer);
             let api_priority_fee_lamports = <Option<u64>>::sse_decode(&mut deserializer);
             let api_enable_merging = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_fee_payer = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, spr_mobile::WalletError>((move || {
@@ -1265,6 +1268,7 @@ fn wire__spr_mobile__MobileWallet_prepare_registration_impl(
                         &*api_that_guard,
                         api_priority_fee_lamports,
                         api_enable_merging,
+                        api_fee_payer,
                     )?;
                     Ok(output_ok)
                 })())

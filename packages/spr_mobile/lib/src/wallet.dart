@@ -330,17 +330,22 @@ class SprWallet {
   /// `null`; use [prepareMerging] to enable merging for it. While enabled,
   /// whoever holds this wallet's nullifier secret and notes can merge them,
   /// as described on [prepareMerging].
+  /// Set [feePayer] to have a sponsor pay the transaction fee and new
+  /// user-record rent; the wallet owner still signs. [PreparedTransaction.feePayer]
+  /// and [PreparedTransaction.signers] show the payer and signature order.
   /// Every prepare method accepts a total [priorityFeeLamports] in lamports.
   /// When omitted, it uses `WalletConfig.priorityFeeLamports`. The fee is
   /// written into the v1 message header before the application signs it.
   Future<PreparedTransaction?> prepareRegistration({
     bool enableMerging = false,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _prepare(
       _wallet.prepareRegistration(
         enableMerging: enableMerging,
         priorityFeeLamports: priorityFeeLamports,
+        feePayer: feePayer,
       ),
     ),
   );
@@ -450,10 +455,13 @@ class SprWallet {
   /// the approval screen. A pool whose protocol config lets only its
   /// authority do that fails with [WalletError.assetNotSupported] before
   /// anything is built. Two first deposits of one mint prepared at the same
-  /// time both create them, so the second to land fails.
+  /// time both create them, so the second to land fails. `feePayer` pays the
+  /// network fee; on a first SPL deposit, this account remains the create
+  /// instruction's authority and pays the registry and vault rent.
   Future<PreparedTransaction> prepareDeposit(
     BigInt amount, {
     String? mint,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _prepare(
@@ -461,6 +469,7 @@ class SprWallet {
         mint: mint,
         amount: amount,
         priorityFeeLamports: priorityFeeLamports,
+        feePayer: feePayer,
       ),
     ),
   );
