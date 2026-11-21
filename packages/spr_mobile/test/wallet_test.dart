@@ -278,13 +278,16 @@ class FakeWallet implements MobileWallet {
   }
 
   final registrationMerging = <bool?>[];
+  final registrationFeePayers = <String?>[];
 
   @override
   Future<PreparedTransaction?> prepareRegistration({
     bool? enableMerging,
     BigInt? priorityFeeLamports,
+    String? feePayer,
   }) async {
     registrationMerging.add(enableMerging);
+    registrationFeePayers.add(feePayer);
     priorityFees.add(priorityFeeLamports);
     await holdRegistration?.future;
     return switch (status) {
@@ -332,13 +335,17 @@ class FakeWallet implements MobileWallet {
     );
   }
 
+  final depositFeePayers = <String?>[];
+
   @override
   Future<PreparedTransaction> prepareDeposit({
     String? mint,
     required BigInt amount,
     BigInt? priorityFeeLamports,
+    String? feePayer,
   }) async {
     priorityFees.add(priorityFeeLamports);
+    depositFeePayers.add(feePayer);
     return FakePending(
       Uint8List.fromList([1, 2]),
       operation: Operation.deposit(
@@ -1590,6 +1597,17 @@ void main() {
     await wallet.prepareRegistration(enableMerging: false);
 
     expect(native.registrationMerging, [false, true, false]);
+  });
+
+  test('passes the optional sponsor for registration and deposits', () async {
+    final (wallet, native, _, _) = await openWallet();
+    native.status = RegistrationStatus.notRegistered;
+
+    await wallet.prepareRegistration(feePayer: 'sponsor');
+    await wallet.prepareDeposit(BigInt.one, feePayer: 'sponsor');
+
+    expect(native.registrationFeePayers, ['sponsor']);
+    expect(native.depositFeePayers, ['sponsor']);
   });
 
   test('passes the priority fee of each call, null for the config', () async {

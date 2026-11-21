@@ -13,7 +13,9 @@ pub enum Operation {
     /// Moves public funds into the private balance. Public: sender, asset,
     /// amount. `creates_spl_interface` when it is the mint's first deposit
     /// into the pool: the transaction first creates the mint's registry
-    /// entry and vault, and this account pays their rent.
+    /// entry and vault. The wallet owner remains the create instruction's
+    /// authority and pays their rent, even when another account pays the
+    /// transaction fee.
     Deposit {
         mint: Option<String>,
         amount: u64,

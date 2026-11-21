@@ -134,8 +134,18 @@ impl MobileWallet {
         &self,
         instructions: &[Instruction],
     ) -> Result<VersionedMessage, WalletError> {
+        self.message_with_payer(&self.owner, instructions)
+    }
+
+    /// A message with `instructions`, paid by `payer`. Its blockhash is set
+    /// by [`Self::pending`].
+    pub(super) fn message_with_payer(
+        &self,
+        payer: &Pubkey,
+        instructions: &[Instruction],
+    ) -> Result<VersionedMessage, WalletError> {
         Ok(compile_message(
-            &self.owner,
+            payer,
             instructions,
             Default::default(),
             ComputeBudgetConfig::for_instruction_count(instructions.len()),

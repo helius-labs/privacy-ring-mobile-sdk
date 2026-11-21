@@ -559,6 +559,14 @@ final text = switch (tx.operation) {
 transactions, until the indexer has it. `submit(tx, signatures)`
 sends through the wallet's RPC instead.
 
+- `prepareRegistration` and `prepareDeposit` take an optional `feePayer`,
+  for example the application's backend. For registration, it pays the network
+  fee and new user-record rent; the owner still signs. For deposits, it pays
+  the network fee while this account remains the depositor. On a first SPL
+  deposit, this account is also the create instruction's authority and pays the
+  new registry and vault rent. In either case, `tx.signers` is
+  `[feePayer, owner]`; use `tx.feePayer` and `tx.signers` to show who pays
+  and who must sign. `Operation` remains the transaction summary.
 - `prepareSpend` takes an optional `feePayer`, for example the application's
   backend. It pays the network fee instead of this account and signs first:
   `tx.signers` is `[feePayer, owner]`, and the fee payer's signature is the

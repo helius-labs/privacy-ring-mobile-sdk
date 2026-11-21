@@ -18,13 +18,17 @@ impl MobileWallet {
     /// lets only its authority create them refuses with
     /// [`WalletError::AssetNotSupported`] before the blockhash is read. Two
     /// first deposits of one mint prepared at the same time both create
-    /// them, so the second to land fails.
+    /// them, so the second to land fails. `fee_payer` pays the network fee,
+    /// this account when omitted. On a first SPL deposit, this account remains
+    /// the create instruction's authority and pays the registry and vault rent.
     pub fn prepare_deposit(
         &mut self,
         mint: Option<String>,
         amount: u64,
         priority_fee_lamports: Option<u64>,
+        fee_payer: Option<String>,
     ) -> Result<PreparedTransaction, WalletError> {
+        let fee_payer = self.fee_payer(fee_payer)?;
         let (asset, registered) = self
             .assets()
             .resolve_for_deposit(&self.client, mint.as_deref())?;
@@ -67,8 +71,10 @@ impl MobileWallet {
         }
         .instruction()?;
         instructions.push(deposit);
-        let message =
-            self.with_priority_fee(self.message(&instructions)?, priority_fee_lamports)?;
+        let message = self.with_priority_fee(
+            self.message_with_payer(&fee_payer, &instructions)?,
+            priority_fee_lamports,
+        )?;
         self.pending(
             Operation::Deposit {
                 mint: mint_name(&asset.mint),

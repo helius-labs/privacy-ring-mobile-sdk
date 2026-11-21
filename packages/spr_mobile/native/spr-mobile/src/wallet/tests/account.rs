@@ -149,7 +149,7 @@ fn registration_enables_merging_only_when_requested() {
                 },
             );
             let pending = wallet
-                .prepare_registration(fee, enable_merging)
+                .prepare_registration(fee, enable_merging, None)
                 .unwrap()
                 .unwrap();
             assert_eq!(pending.operation(), Operation::Registration);
@@ -210,6 +210,86 @@ fn registration_enables_merging_only_when_requested() {
 }
 
 #[test]
+fn registration_uses_sponsor_for_fee_and_rent_but_owner_still_signs() {
+    use spr_user_registry_interface::{instruction::discriminator, user_registry_program_id};
+
+    let signer = Keypair::new();
+    let sponsor = Keypair::new();
+    for enable_merging in [false, true] {
+        let (wallet, _) = rpc_wallet_with(
+            &signer,
+            config(),
+            |method| match method {
+                "getAccountInfo" => serde_json::json!({"result": {
+                    "context": {"slot": 1}, "value": null
+                }}),
+                "getLatestBlockhash" => serde_json::json!({"result": {
+                    "context": {"slot": 1}, "value": {
+                        "blockhash": "11111111111111111111111111111111",
+                        "lastValidBlockHeight": 9
+                    }
+                }}),
+                _ => panic!("unexpected request: {method}"),
+            },
+        );
+        let pending = wallet
+            .prepare_registration(
+                None,
+                Some(enable_merging),
+                Some(sponsor.pubkey().to_string()),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(pending.fee_payer(), sponsor.pubkey().to_string());
+        assert_eq!(
+            pending.signers(),
+            [sponsor.pubkey().to_string(), signer.pubkey().to_string()]
+        );
+        assert_eq!(pending.operation(), Operation::Registration);
+
+        let VersionedMessage::V1(message) = &pending.message else {
+            panic!("not a v1 message");
+        };
+        let keys = &message.account_keys;
+        let register = &message.instructions[0];
+        assert_eq!(
+            keys[usize::from(register.program_id_index)],
+            user_registry_program_id()
+        );
+        let record = user_record_pda(&signer.pubkey()).0;
+        let accounts = |indices: &[u8]| {
+            indices
+                .iter()
+                .map(|&i| keys[usize::from(i)])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            accounts(&register.accounts),
+            [record, signer.pubkey(), sponsor.pubkey(), Pubkey::default()]
+        );
+        assert_eq!(register.data[0], discriminator::REGISTER);
+        assert_eq!(&register.data[1..33], &wallet.address.nullifier_pubkey);
+        assert_eq!(
+            &register.data[33..],
+            wallet.address.viewing_pubkey.as_bytes()
+        );
+        if enable_merging {
+            let merge = &message.instructions[1];
+            assert_eq!(
+                keys[usize::from(merge.program_id_index)],
+                user_registry_program_id()
+            );
+            assert_eq!(
+                accounts(&merge.accounts),
+                [record, signer.pubkey()],
+                "the owner remains the merge-setting authority"
+            );
+        }
+    }
+}
+
+#[test]
 fn registration_keeps_existing_records_and_refuses_other_keys() {
     use spr_user_registry_interface::{user_registry_program_id, UserRecord};
 
@@ -237,7 +317,7 @@ fn registration_keeps_existing_records_and_refuses_other_keys() {
                     assert_eq!(method, "getAccountInfo");
                     serde_json::json!({"result": {"context": {"slot": 1}, "value": record}})
                 });
-                let result = wallet.prepare_registration(None, enable_merging);
+                let result = wallet.prepare_registration(None, enable_merging, None);
                 if conflict.is_some() {
                     assert_eq!(
                         result.err(),

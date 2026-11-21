@@ -302,7 +302,9 @@ impl MobileWallet {
     /// with [`WalletError::RegistrationConflict`] when it holds other keys:
     /// this wallet never replaces them. `priority_fee_lamports` overrides
     /// [`WalletConfig::priority_fee_lamports`], as on every prepared
-    /// transaction.
+    /// transaction. `fee_payer` pays the transaction fee and the rent for a
+    /// new user record; the wallet owner still signs. When omitted, this
+    /// account is the fee payer.
     /// When `enable_merging` is `Some(true)`, a new registration also selects
     /// `PoseidonCtrV1` in the same message, after register. `None` and
     /// `Some(false)` leave merging disabled. An existing registration is
@@ -311,17 +313,23 @@ impl MobileWallet {
         &self,
         priority_fee_lamports: Option<u64>,
         enable_merging: Option<bool>,
+        fee_payer: Option<String>,
     ) -> Result<Option<PreparedTransaction>, WalletError> {
-        let message =
-            build_registration_transaction_sync(&self.client, self.owner, &self.address, None)?;
+        let fee_payer = self.fee_payer(fee_payer)?;
+        let message = build_registration_transaction_sync(
+            &self.client,
+            self.owner,
+            &self.address,
+            Some(fee_payer),
+        )?;
         message
             .map(|message| {
                 let message = if enable_merging.unwrap_or(false) {
-                    self.message(&[
+                    self.message_with_payer(&fee_payer, &[
                         register(
                             user_record_pda(&self.owner).0,
                             self.owner,
-                            self.owner,
+                            fee_payer,
                             RegisterData {
                                 nullifier_pubkey: self.address.nullifier_pubkey,
                                 viewing_pubkey: *self.address.viewing_pubkey.as_bytes(),
