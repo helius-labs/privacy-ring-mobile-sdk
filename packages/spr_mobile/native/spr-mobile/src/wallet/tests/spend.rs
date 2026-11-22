@@ -38,7 +38,7 @@ fn a_transaction_pays_the_priority_fee_its_call_or_the_config_names() {
     };
 
     let (mut wallet, _) = rpc_wallet(&signer, blockhash);
-    let pending = wallet.prepare_deposit(None, 100, None).unwrap();
+    let pending = wallet.prepare_deposit(None, 100, None, None).unwrap();
     assert_eq!(pending.priority_fee_lamports(), 0);
     assert_eq!(fee_in_header(&pending), None);
 
@@ -47,14 +47,16 @@ fn a_transaction_pays_the_priority_fee_its_call_or_the_config_names() {
         ..config()
     };
     let (mut wallet, _) = rpc_wallet_with(&signer, config, blockhash);
-    let pending = wallet.prepare_deposit(None, 100, None).unwrap();
+    let pending = wallet.prepare_deposit(None, 100, None, None).unwrap();
     assert_eq!(pending.priority_fee_lamports(), 5_000);
     assert_eq!(fee_in_header(&pending), Some(5_000));
-    let named = wallet.prepare_deposit(None, 100, Some(12_000)).unwrap();
+    let named = wallet
+        .prepare_deposit(None, 100, None, Some(12_000))
+        .unwrap();
     assert_eq!(named.priority_fee_lamports(), 12_000);
     let refreshed = wallet.refresh(&named).unwrap();
     assert_eq!(fee_in_header(&refreshed), Some(12_000));
-    let free = wallet.prepare_deposit(None, 100, Some(0)).unwrap();
+    let free = wallet.prepare_deposit(None, 100, None, Some(0)).unwrap();
     assert_eq!(fee_in_header(&free), Some(0));
 }
 

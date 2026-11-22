@@ -149,7 +149,7 @@ fn registration_enables_merging_only_when_requested() {
                 },
             );
             let pending = wallet
-                .prepare_registration(fee, enable_merging)
+                .prepare_registration(enable_merging, None, fee)
                 .unwrap()
                 .unwrap();
             assert_eq!(pending.operation(), Operation::Registration);
@@ -209,6 +209,57 @@ fn registration_enables_merging_only_when_requested() {
     }
 }
 
+/// A fee payer pays the fee and the record's rent and signs first; the
+/// owner still signs. Without one the owner does both, as before.
+#[test]
+fn registration_lets_a_fee_payer_pay_and_sign_first() {
+    let signer = Keypair::new();
+    let sponsor = Keypair::new();
+    for enable_merging in [false, true] {
+        for payer in [None, Some(sponsor.pubkey().to_string())] {
+            let (wallet, _) = rpc_wallet_with(&signer, config(), |method| match method {
+                "getAccountInfo" => serde_json::json!({"result": {
+                    "context": {"slot": 1}, "value": null
+                }}),
+                "getLatestBlockhash" => serde_json::json!({"result": {
+                    "context": {"slot": 1}, "value": {
+                        "blockhash": "11111111111111111111111111111111",
+                        "lastValidBlockHeight": 9
+                    }
+                }}),
+                _ => panic!("unexpected request: {method}"),
+            });
+            let sponsored = payer.is_some();
+            let pending = wallet
+                .prepare_registration(Some(enable_merging), payer, None)
+                .unwrap()
+                .unwrap();
+            let owner = signer.pubkey().to_string();
+            let signers = if sponsored {
+                vec![sponsor.pubkey().to_string(), owner.clone()]
+            } else {
+                vec![owner.clone()]
+            };
+            assert_eq!(pending.signers(), signers);
+            assert_eq!(pending.fee_payer(), signers[0]);
+            // The register instruction's payer account funds the record's
+            // rent: the sponsor when there is one, the owner otherwise.
+            let VersionedMessage::V1(message) = &pending.message else {
+                panic!("not a v1 message");
+            };
+            let register = &message.instructions[0];
+            assert_eq!(
+                message.account_keys[usize::from(register.accounts[2])],
+                if sponsored {
+                    sponsor.pubkey()
+                } else {
+                    signer.pubkey()
+                }
+            );
+        }
+    }
+}
+
 #[test]
 fn registration_keeps_existing_records_and_refuses_other_keys() {
     use spr_user_registry_interface::{user_registry_program_id, UserRecord};
@@ -237,7 +288,7 @@ fn registration_keeps_existing_records_and_refuses_other_keys() {
                     assert_eq!(method, "getAccountInfo");
                     serde_json::json!({"result": {"context": {"slot": 1}, "value": record}})
                 });
-                let result = wallet.prepare_registration(None, enable_merging);
+                let result = wallet.prepare_registration(enable_merging, None, None);
                 if conflict.is_some() {
                     assert_eq!(
                         result.err(),

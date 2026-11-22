@@ -168,15 +168,18 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// its own private balance. Deposits carry no proof.
   ///
   /// The first deposit of a mint into the pool creates the mint's registry
-  /// entry and vault in the same transaction, signed and paid for by this
-  /// account; [`Operation::Deposit`] says so. A pool whose protocol config
-  /// lets only its authority create them refuses with
-  /// [`WalletError::AssetNotSupported`] before the blockhash is read. Two
-  /// first deposits of one mint prepared at the same time both create
-  /// them, so the second to land fails.
+  /// entry and vault in the same transaction; [`Operation::Deposit`] says
+  /// so. A pool whose protocol config lets only its authority create them
+  /// refuses with [`WalletError::AssetNotSupported`] before the blockhash
+  /// is read. Two first deposits of one mint prepared at the same time
+  /// both create them, so the second to land fails.
+  /// `fee_payer` pays the network fee and that setup's rent, this account
+  /// when `None`; another fee payer signs first, before this account, which
+  /// still signs as depositor.
   Future<PreparedTransaction> prepareDeposit({
     String? mint,
     required BigInt amount,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   });
 
@@ -217,13 +220,16 @@ abstract class MobileWallet implements RustOpaqueInterface {
   /// this wallet never replaces them. `priority_fee_lamports` overrides
   /// [`WalletConfig::priority_fee_lamports`], as on every prepared
   /// transaction.
+  /// `fee_payer` pays the network fee and the record's rent, this account
+  /// when `None`; another fee payer signs first, before this account.
   /// When `enable_merging` is `Some(true)`, a new registration also selects
   /// `PoseidonCtrV1` in the same message, after register. `None` and
   /// `Some(false)` leave merging disabled. An existing registration is
   /// still a no-op; use [`Self::prepare_merging`] to change its scheme.
   Future<PreparedTransaction?> prepareRegistration({
-    BigInt? priorityFeeLamports,
     bool? enableMerging,
+    String? feePayer,
+    BigInt? priorityFeeLamports,
   });
 
   /// Build and prove a spend of `mint` (SOL for `None`) to `outputs`, in
@@ -637,7 +643,7 @@ sealed class Operation with _$Operation {
   /// Moves public funds into the private balance. Public: sender, asset,
   /// amount. `creates_spl_interface` when it is the mint's first deposit
   /// into the pool: the transaction first creates the mint's registry
-  /// entry and vault, and this account pays their rent.
+  /// entry and vault.
   const factory Operation.deposit({
     String? mint,
     required BigInt amount,

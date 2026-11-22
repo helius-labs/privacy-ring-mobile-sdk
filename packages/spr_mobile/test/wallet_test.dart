@@ -278,20 +278,26 @@ class FakeWallet implements MobileWallet {
   }
 
   final registrationMerging = <bool?>[];
+  final registrationFeePayers = <String?>[];
 
   @override
   Future<PreparedTransaction?> prepareRegistration({
     bool? enableMerging,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) async {
     registrationMerging.add(enableMerging);
+    registrationFeePayers.add(feePayer);
     priorityFees.add(priorityFeeLamports);
     await holdRegistration?.future;
     return switch (status) {
       RegistrationStatus.registered => null,
       RegistrationStatus.conflict =>
         throw const WalletError.registrationConflict(owner: owner),
-      RegistrationStatus.notRegistered => FakePending(Uint8List.fromList([3])),
+      RegistrationStatus.notRegistered => FakePending(
+        Uint8List.fromList([3]),
+        signers: feePayer == null ? const [owner] : [feePayer, owner],
+      ),
     };
   }
 
@@ -332,15 +338,20 @@ class FakeWallet implements MobileWallet {
     );
   }
 
+  final depositFeePayers = <String?>[];
+
   @override
   Future<PreparedTransaction> prepareDeposit({
     String? mint,
     required BigInt amount,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) async {
+    depositFeePayers.add(feePayer);
     priorityFees.add(priorityFeeLamports);
     return FakePending(
       Uint8List.fromList([1, 2]),
+      signers: feePayer == null ? const [owner] : [feePayer, owner],
       operation: Operation.deposit(
         mint: mint,
         amount: amount,
@@ -1546,6 +1557,28 @@ void main() {
     expect(await wallet.submit(transaction, signatures), 'signature');
     expect(native.submitted.single.$2, signatures);
     expect(signer.requests, hasLength(1), reason: 'only the open was signed');
+  });
+
+  test('passes the fee payer to registration and deposit', () async {
+    final (wallet, native, _, _) = await openWallet();
+    native.status = RegistrationStatus.notRegistered;
+
+    final sponsored = await wallet.prepareRegistration(feePayer: 'Backend');
+    final sponsoredDeposit = await wallet.prepareDeposit(
+      BigInt.one,
+      feePayer: 'Backend',
+    );
+    final plain = await wallet.prepareRegistration();
+    final plainDeposit = await wallet.prepareDeposit(BigInt.one);
+
+    expect(native.registrationFeePayers, ['Backend', null]);
+    expect(native.depositFeePayers, ['Backend', null]);
+    expect(sponsored?.signers, ['Backend', owner]);
+    expect(sponsoredDeposit.signers, ['Backend', owner]);
+    expect(sponsored?.feePayer, 'Backend');
+    expect(sponsoredDeposit.feePayer, 'Backend');
+    expect(plain?.signers, [owner]);
+    expect(plainDeposit.signers, [owner]);
   });
 
   test(

@@ -303,35 +303,46 @@ impl MobileWallet {
     /// this wallet never replaces them. `priority_fee_lamports` overrides
     /// [`WalletConfig::priority_fee_lamports`], as on every prepared
     /// transaction.
+    /// `fee_payer` pays the network fee and the record's rent, this account
+    /// when `None`; another fee payer signs first, before this account.
     /// When `enable_merging` is `Some(true)`, a new registration also selects
     /// `PoseidonCtrV1` in the same message, after register. `None` and
     /// `Some(false)` leave merging disabled. An existing registration is
     /// still a no-op; use [`Self::prepare_merging`] to change its scheme.
     pub fn prepare_registration(
         &self,
-        priority_fee_lamports: Option<u64>,
         enable_merging: Option<bool>,
+        fee_payer: Option<String>,
+        priority_fee_lamports: Option<u64>,
     ) -> Result<Option<PreparedTransaction>, WalletError> {
-        let message =
-            build_registration_transaction_sync(&self.client, self.owner, &self.address, None)?;
+        let payer = self.fee_payer(fee_payer)?;
+        let message = build_registration_transaction_sync(
+            &self.client,
+            self.owner,
+            &self.address,
+            Some(payer),
+        )?;
         message
             .map(|message| {
                 let message = if enable_merging.unwrap_or(false) {
-                    self.message(&[
-                        register(
-                            user_record_pda(&self.owner).0,
-                            self.owner,
-                            self.owner,
-                            RegisterData {
-                                nullifier_pubkey: self.address.nullifier_pubkey,
-                                viewing_pubkey: *self.address.viewing_pubkey.as_bytes(),
-                            },
-                        ),
-                        set_merge_encryption_instruction(
-                            self.owner,
-                            MergeEncryptionScheme::PoseidonCtrV1,
-                        ),
-                    ])?
+                    self.message(
+                        payer,
+                        &[
+                            register(
+                                user_record_pda(&self.owner).0,
+                                self.owner,
+                                payer,
+                                RegisterData {
+                                    nullifier_pubkey: self.address.nullifier_pubkey,
+                                    viewing_pubkey: *self.address.viewing_pubkey.as_bytes(),
+                                },
+                            ),
+                            set_merge_encryption_instruction(
+                                self.owner,
+                                MergeEncryptionScheme::PoseidonCtrV1,
+                            ),
+                        ],
+                    )?
                 } else {
                     message
                 };
@@ -369,8 +380,10 @@ impl MobileWallet {
             MergeEncryptionScheme::Disabled
         };
         let instruction = set_merge_encryption_instruction(self.owner, scheme);
-        let message =
-            self.with_priority_fee(self.message(&[instruction])?, priority_fee_lamports)?;
+        let message = self.with_priority_fee(
+            self.message(self.owner, &[instruction])?,
+            priority_fee_lamports,
+        )?;
         self.pending(Operation::Merging { enabled }, message)
             .map(Some)
     }

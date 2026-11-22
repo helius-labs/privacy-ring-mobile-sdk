@@ -1071,6 +1071,7 @@ fn wire__spr_mobile__MobileWallet_prepare_deposit_impl(
             >>::sse_decode(&mut deserializer);
             let api_mint = <Option<String>>::sse_decode(&mut deserializer);
             let api_amount = <u64>::sse_decode(&mut deserializer);
+            let api_fee_payer = <Option<String>>::sse_decode(&mut deserializer);
             let api_priority_fee_lamports = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -1093,6 +1094,7 @@ fn wire__spr_mobile__MobileWallet_prepare_deposit_impl(
                         &mut *api_that_guard,
                         api_mint,
                         api_amount,
+                        api_fee_payer,
                         api_priority_fee_lamports,
                     )?;
                     Ok(output_ok)
@@ -1242,8 +1244,9 @@ fn wire__spr_mobile__MobileWallet_prepare_registration_impl(
             let api_that = <RustOpaqueMoi<
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<MobileWallet>,
             >>::sse_decode(&mut deserializer);
-            let api_priority_fee_lamports = <Option<u64>>::sse_decode(&mut deserializer);
             let api_enable_merging = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_fee_payer = <Option<String>>::sse_decode(&mut deserializer);
+            let api_priority_fee_lamports = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, spr_mobile::WalletError>((move || {
@@ -1263,8 +1266,9 @@ fn wire__spr_mobile__MobileWallet_prepare_registration_impl(
                     let api_that_guard = api_that_guard.unwrap();
                     let output_ok = spr_mobile::MobileWallet::prepare_registration(
                         &*api_that_guard,
-                        api_priority_fee_lamports,
                         api_enable_merging,
+                        api_fee_payer,
+                        api_priority_fee_lamports,
                     )?;
                     Ok(output_ok)
                 })())

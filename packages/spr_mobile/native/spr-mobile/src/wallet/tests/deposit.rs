@@ -15,7 +15,7 @@ fn a_deposit_is_one_instruction_this_account_signs() {
         }}),
         _ => serde_json::json!({"error": {"code": -32603, "message": "unexpected"}}),
     });
-    let pending = wallet.prepare_deposit(None, 100, None).unwrap();
+    let pending = wallet.prepare_deposit(None, 100, None, None).unwrap();
     assert_eq!(
         pending.operation(),
         Operation::Deposit {
@@ -29,6 +29,63 @@ fn a_deposit_is_one_instruction_this_account_signs() {
     assert_eq!(pending.last_valid_block_height(), 9);
 }
 
+/// A fee payer pays the fee and a first deposit's setup rent and signs
+/// first; the owner still signs as depositor. Without one the owner does
+/// both, as before.
+#[test]
+fn a_deposit_lets_a_fee_payer_pay_and_sign_first() {
+    let signer = Keypair::new();
+    let sponsor = Keypair::new();
+    for payer in [None, Some(sponsor.pubkey().to_string())] {
+        let (mut wallet, _) = rpc_wallet(&signer, |method| match method {
+            "getLatestBlockhash" => serde_json::json!({"result": {
+                "context": {"slot": 1},
+                "value": {
+                    "blockhash": "11111111111111111111111111111111",
+                    "lastValidBlockHeight": 9
+                }
+            }}),
+            _ => serde_json::json!({"error": {"code": -32603, "message": "unexpected"}}),
+        });
+        let sponsored = payer.is_some();
+        let pending = wallet.prepare_deposit(None, 100, payer, None).unwrap();
+        let owner = signer.pubkey().to_string();
+        let signers = if sponsored {
+            vec![sponsor.pubkey().to_string(), owner.clone()]
+        } else {
+            vec![owner]
+        };
+        assert_eq!(pending.signers(), signers);
+        assert_eq!(pending.fee_payer(), signers[0]);
+    }
+
+    // The mint setup's authority is the fee payer, so it funds the rent;
+    // the owner stays the depositor.
+    let (mut wallet, _) = token_wallet(
+        &signer,
+        serde_json::Value::Null,
+        protocol_config(true, Keypair::new().pubkey()),
+    );
+    let pending = wallet
+        .prepare_deposit(
+            Some(MINT.to_string()),
+            100,
+            Some(sponsor.pubkey().to_string()),
+            None,
+        )
+        .unwrap();
+    let keys = pending.message.static_account_keys();
+    let instructions = pending.message.instructions();
+    assert_eq!(
+        keys[usize::from(instructions[0].accounts[0])],
+        sponsor.pubkey()
+    );
+    assert_eq!(
+        pending.signers(),
+        [sponsor.pubkey().to_string(), signer.pubkey().to_string()]
+    );
+}
+
 /// The first deposit of a mint the pool has not registered creates its
 /// registry entry and vault first, in the same transaction this account
 /// signs; once registered, a deposit is one instruction again.
@@ -38,7 +95,7 @@ fn a_first_token_deposit_creates_the_mints_registry_entry_and_vault() {
     let other = Keypair::new().pubkey();
     let deposit = |registry, config| {
         let (mut wallet, _) = token_wallet(&signer, registry, config);
-        wallet.prepare_deposit(Some(MINT.to_string()), 100, None)
+        wallet.prepare_deposit(Some(MINT.to_string()), 100, None, None)
     };
     let registered = account(
         PROGRAM_ID_PUBKEY,
@@ -95,7 +152,7 @@ fn a_first_token_deposit_the_pool_restricts_is_refused_before_the_blockhash() {
     );
     assert_eq!(
         wallet
-            .prepare_deposit(Some(MINT.to_string()), 100, None)
+            .prepare_deposit(Some(MINT.to_string()), 100, None, None)
             .err(),
         Some(WalletError::AssetNotSupported {
             mint: MINT.to_string()
@@ -108,7 +165,7 @@ fn a_first_token_deposit_the_pool_restricts_is_refused_before_the_blockhash() {
         .any(|method| method == "getLatestBlockhash"));
     let (mut wallet, _) = token_wallet(&signer, serde_json::Value::Null, serde_json::Value::Null);
     assert!(matches!(
-        wallet.prepare_deposit(Some(MINT.to_string()), 100, None),
+        wallet.prepare_deposit(Some(MINT.to_string()), 100, None, None),
         Err(WalletError::Client { message }) if message.contains("protocol config")
     ));
 }

@@ -169,6 +169,7 @@ abstract class RustLibApi extends BaseApi {
     required MobileWallet that,
     String? mint,
     required BigInt amount,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   });
 
@@ -189,8 +190,9 @@ abstract class RustLibApi extends BaseApi {
 
   Future<PreparedTransaction?> sprMobileMobileWalletPrepareRegistration({
     required MobileWallet that,
-    BigInt? priorityFeeLamports,
     bool? enableMerging,
+    String? feePayer,
+    BigInt? priorityFeeLamports,
   });
 
   Future<PreparedTransaction> sprMobileMobileWalletPrepareSpend({
@@ -1135,6 +1137,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required MobileWallet that,
     String? mint,
     required BigInt amount,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) {
     return handler.executeNormal(
@@ -1147,6 +1150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_opt_String(mint, serializer);
           sse_encode_u_64(amount, serializer);
+          sse_encode_opt_String(feePayer, serializer);
           sse_encode_opt_box_autoadd_u_64(priorityFeeLamports, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -1161,7 +1165,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_wallet_error,
         ),
         constMeta: kSprMobileMobileWalletPrepareDepositConstMeta,
-        argValues: [that, mint, amount, priorityFeeLamports],
+        argValues: [that, mint, amount, feePayer, priorityFeeLamports],
         apiImpl: this,
       ),
     );
@@ -1170,7 +1174,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kSprMobileMobileWalletPrepareDepositConstMeta =>
       const TaskConstMeta(
         debugName: "MobileWallet_prepare_deposit",
-        argNames: ["that", "mint", "amount", "priorityFeeLamports"],
+        argNames: ["that", "mint", "amount", "feePayer", "priorityFeeLamports"],
       );
 
   @override
@@ -1278,8 +1282,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<PreparedTransaction?> sprMobileMobileWalletPrepareRegistration({
     required MobileWallet that,
-    BigInt? priorityFeeLamports,
     bool? enableMerging,
+    String? feePayer,
+    BigInt? priorityFeeLamports,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1289,8 +1294,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          sse_encode_opt_box_autoadd_u_64(priorityFeeLamports, serializer);
           sse_encode_opt_box_autoadd_bool(enableMerging, serializer);
+          sse_encode_opt_String(feePayer, serializer);
+          sse_encode_opt_box_autoadd_u_64(priorityFeeLamports, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1304,7 +1310,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_wallet_error,
         ),
         constMeta: kSprMobileMobileWalletPrepareRegistrationConstMeta,
-        argValues: [that, priorityFeeLamports, enableMerging],
+        argValues: [that, enableMerging, feePayer, priorityFeeLamports],
         apiImpl: this,
       ),
     );
@@ -1313,7 +1319,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kSprMobileMobileWalletPrepareRegistrationConstMeta =>
       const TaskConstMeta(
         debugName: "MobileWallet_prepare_registration",
-        argNames: ["that", "priorityFeeLamports", "enableMerging"],
+        argNames: ["that", "enableMerging", "feePayer", "priorityFeeLamports"],
       );
 
   @override
@@ -6888,20 +6894,24 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   /// its own private balance. Deposits carry no proof.
   ///
   /// The first deposit of a mint into the pool creates the mint's registry
-  /// entry and vault in the same transaction, signed and paid for by this
-  /// account; [`Operation::Deposit`] says so. A pool whose protocol config
-  /// lets only its authority create them refuses with
-  /// [`WalletError::AssetNotSupported`] before the blockhash is read. Two
-  /// first deposits of one mint prepared at the same time both create
-  /// them, so the second to land fails.
+  /// entry and vault in the same transaction; [`Operation::Deposit`] says
+  /// so. A pool whose protocol config lets only its authority create them
+  /// refuses with [`WalletError::AssetNotSupported`] before the blockhash
+  /// is read. Two first deposits of one mint prepared at the same time
+  /// both create them, so the second to land fails.
+  /// `fee_payer` pays the network fee and that setup's rent, this account
+  /// when `None`; another fee payer signs first, before this account, which
+  /// still signs as depositor.
   Future<PreparedTransaction> prepareDeposit({
     String? mint,
     required BigInt amount,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) => RustLib.instance.api.sprMobileMobileWalletPrepareDeposit(
     that: this,
     mint: mint,
     amount: amount,
+    feePayer: feePayer,
     priorityFeeLamports: priorityFeeLamports,
   );
 
@@ -6953,17 +6963,21 @@ class MobileWalletImpl extends RustOpaque implements MobileWallet {
   /// this wallet never replaces them. `priority_fee_lamports` overrides
   /// [`WalletConfig::priority_fee_lamports`], as on every prepared
   /// transaction.
+  /// `fee_payer` pays the network fee and the record's rent, this account
+  /// when `None`; another fee payer signs first, before this account.
   /// When `enable_merging` is `Some(true)`, a new registration also selects
   /// `PoseidonCtrV1` in the same message, after register. `None` and
   /// `Some(false)` leave merging disabled. An existing registration is
   /// still a no-op; use [`Self::prepare_merging`] to change its scheme.
   Future<PreparedTransaction?> prepareRegistration({
-    BigInt? priorityFeeLamports,
     bool? enableMerging,
+    String? feePayer,
+    BigInt? priorityFeeLamports,
   }) => RustLib.instance.api.sprMobileMobileWalletPrepareRegistration(
     that: this,
-    priorityFeeLamports: priorityFeeLamports,
     enableMerging: enableMerging,
+    feePayer: feePayer,
+    priorityFeeLamports: priorityFeeLamports,
   );
 
   /// Build and prove a spend of `mint` (SOL for `None`) to `outputs`, in

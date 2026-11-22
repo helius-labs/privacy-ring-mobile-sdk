@@ -501,7 +501,7 @@ fn private_transfer(
 
 fn register(wallet: &mut MobileWallet, signer: &Keypair) {
     if let Some(pending) = wallet
-        .prepare_registration(None, None)
+        .prepare_registration(None, None, None)
         .expect("prepare registration")
     {
         submit(wallet, &[signer], pending);
@@ -534,7 +534,9 @@ fn register_deposit_transfer_and_receive() {
     let sender_before = private_sol(&mut sender_wallet);
     let recipient_before = private_sol(&mut recipient_wallet);
 
-    let pending = sender_wallet.prepare_deposit(None, DEPOSIT, None).unwrap();
+    let pending = sender_wallet
+        .prepare_deposit(None, DEPOSIT, None, None)
+        .unwrap();
     let deposit = submit(&sender_wallet, &[&sender], pending);
     assert_eq!(private_sol(&mut sender_wallet), sender_before + DEPOSIT);
     newest(&mut sender_wallet, &deposit, ActivityKind::Deposit, DEPOSIT);
@@ -639,7 +641,9 @@ fn register_deposit_transfer_and_receive() {
 
     // Two transfers prepared before either is sent take different notes, so
     // both land: the first reserves the notes it spends.
-    let pending = sender_wallet.prepare_deposit(None, SPLIT, None).unwrap();
+    let pending = sender_wallet
+        .prepare_deposit(None, SPLIT, None, None)
+        .unwrap();
     submit(&sender_wallet, &[&sender], pending);
     let recipient_before = private_sol(&mut recipient_wallet);
     let first = private_transfer(&mut sender_wallet, &recipient, SPLIT);
@@ -855,7 +859,7 @@ fn deposits_transfers_and_withdraws_an_spl_token() {
     let recipient_before = private_tokens(&mut recipient_wallet);
 
     let pending = sender_wallet
-        .prepare_deposit(Some(name.clone()), TOKEN_DEPOSIT, None)
+        .prepare_deposit(Some(name.clone()), TOKEN_DEPOSIT, None, None)
         .unwrap();
     assert_eq!(
         pending.operation(),
@@ -994,7 +998,9 @@ fn pays_two_recipients_in_one_transfer() {
     register(&mut sender_wallet, &sender);
     register(&mut recipient_wallet, &recipient);
     if private_sol(&mut sender_wallet) < SPLIT * 3 {
-        let pending = sender_wallet.prepare_deposit(None, DEPOSIT, None).unwrap();
+        let pending = sender_wallet
+            .prepare_deposit(None, DEPOSIT, None, None)
+            .unwrap();
         submit(&sender_wallet, &[&sender], pending);
     }
     let sender_before = private_sol(&mut sender_wallet);
@@ -1058,7 +1064,7 @@ fn merges_notes_proved_remotely_and_on_the_device() {
         // Notes to merge on a fresh account too, and after the last merge
         // took them all.
         for _ in 0..2 {
-            let pending = wallet.prepare_deposit(None, SPLIT, None).unwrap();
+            let pending = wallet.prepare_deposit(None, SPLIT, None, None).unwrap();
             submit(&wallet, &[&owner], pending);
         }
         let before = private_sol(&mut wallet);
@@ -1111,7 +1117,9 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
     }
     for mint in mints {
         for _ in 0..4 {
-            let pending = wallet.prepare_deposit(mint.clone(), SPLIT, None).unwrap();
+            let pending = wallet
+                .prepare_deposit(mint.clone(), SPLIT, None, None)
+                .unwrap();
             submit(&wallet, &[&owner], pending);
         }
         let plan: Vec<_> = wallet
@@ -1205,7 +1213,7 @@ fn sponsored_cache_rounds_restore_and_pay_locally() {
             }
             if slot == 0 {
                 // A smaller arrival and a fresh scan must not alter round two.
-                let pending = wallet.prepare_deposit(mint.clone(), 1, None).unwrap();
+                let pending = wallet.prepare_deposit(mint.clone(), 1, None, None).unwrap();
                 submit(&wallet, &[&owner], pending);
                 let available = wallet.spendable_notes().unwrap();
                 assert!(plan[2..]

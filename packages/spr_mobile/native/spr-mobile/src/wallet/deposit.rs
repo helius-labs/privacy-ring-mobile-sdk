@@ -13,27 +13,31 @@ impl MobileWallet {
     /// its own private balance. Deposits carry no proof.
     ///
     /// The first deposit of a mint into the pool creates the mint's registry
-    /// entry and vault in the same transaction, signed and paid for by this
-    /// account; [`Operation::Deposit`] says so. A pool whose protocol config
-    /// lets only its authority create them refuses with
-    /// [`WalletError::AssetNotSupported`] before the blockhash is read. Two
-    /// first deposits of one mint prepared at the same time both create
-    /// them, so the second to land fails.
+    /// entry and vault in the same transaction; [`Operation::Deposit`] says
+    /// so. A pool whose protocol config lets only its authority create them
+    /// refuses with [`WalletError::AssetNotSupported`] before the blockhash
+    /// is read. Two first deposits of one mint prepared at the same time
+    /// both create them, so the second to land fails.
+    /// `fee_payer` pays the network fee and that setup's rent, this account
+    /// when `None`; another fee payer signs first, before this account, which
+    /// still signs as depositor.
     pub fn prepare_deposit(
         &mut self,
         mint: Option<String>,
         amount: u64,
+        fee_payer: Option<String>,
         priority_fee_lamports: Option<u64>,
     ) -> Result<PreparedTransaction, WalletError> {
+        let payer = self.fee_payer(fee_payer)?;
         let (asset, registered) = self
             .assets()
             .resolve_for_deposit(&self.client, mint.as_deref())?;
         let mut instructions = Vec::with_capacity(2);
         if let (false, Some(token_program)) = (registered, asset.token_program) {
-            self.check_spl_interface_creation(asset.mint)?;
+            self.check_spl_interface_creation(payer, asset.mint)?;
             instructions.push(
                 CreateSplInterface {
-                    authority: self.owner,
+                    authority: payer,
                     mint: asset.mint,
                     token_program,
                 }
@@ -68,7 +72,7 @@ impl MobileWallet {
         .instruction()?;
         instructions.push(deposit);
         let message =
-            self.with_priority_fee(self.message(&instructions)?, priority_fee_lamports)?;
+            self.with_priority_fee(self.message(payer, &instructions)?, priority_fee_lamports)?;
         self.pending(
             Operation::Deposit {
                 mint: mint_name(&asset.mint),
@@ -79,10 +83,10 @@ impl MobileWallet {
         )
     }
 
-    /// Whether this account may create `mint`'s registry entry and vault, as
-    /// the pool's `create_spl_interface` decides: anyone when the protocol
+    /// Whether `payer` may create `mint`'s registry entry and vault, as the
+    /// pool's `create_spl_interface` decides: anyone when the protocol
     /// config allows it, else only the protocol authority.
-    fn check_spl_interface_creation(&self, mint: Pubkey) -> Result<(), WalletError> {
+    fn check_spl_interface_creation(&self, payer: Pubkey, mint: Pubkey) -> Result<(), WalletError> {
         let address = pda::protocol_config();
         let account = self
             .client
@@ -92,7 +96,7 @@ impl MobileWallet {
         let config = ProtocolConfig::from_account_bytes(&account.data)
             .map_err(|failure| ClientError::InvalidProtocolConfig(format!("{failure:?}")))?;
         if config.allows_permissionless_spl_interface_creation()
-            || config.check_protocol_authority(&self.owner).is_ok()
+            || config.check_protocol_authority(&payer).is_ok()
         {
             return Ok(());
         }

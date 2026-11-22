@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use solana_instruction::Instruction;
 use solana_message::VersionedMessage;
+use solana_pubkey::Pubkey;
 use spr_client::{compile_message, ClientError, ComputeBudgetConfig, Rpc, UnsignedMessage};
 use std::collections::{HashMap, HashSet};
 
@@ -128,14 +129,15 @@ impl MobileWallet {
         Ok(message)
     }
 
-    /// A message with `instructions`, paid by this account. Its blockhash is
+    /// A message with `instructions`, paid by `payer`. Its blockhash is
     /// set by [`Self::pending`].
     pub(super) fn message(
         &self,
+        payer: Pubkey,
         instructions: &[Instruction],
     ) -> Result<VersionedMessage, WalletError> {
         Ok(compile_message(
-            &self.owner,
+            &payer,
             instructions,
             Default::default(),
             ComputeBudgetConfig::for_instruction_count(instructions.len()),

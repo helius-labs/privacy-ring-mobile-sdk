@@ -330,16 +330,22 @@ class SprWallet {
   /// `null`; use [prepareMerging] to enable merging for it. While enabled,
   /// whoever holds this wallet's nullifier secret and notes can merge them,
   /// as described on [prepareMerging].
+  /// [feePayer] (a Solana public key, such as the application's backend)
+  /// pays the network fee and the record's rent instead of
+  /// [solanaPublicKey]. This account still signs, so
+  /// [PreparedTransaction.signers] is then `[feePayer, solanaPublicKey]`.
   /// Every prepare method accepts a total [priorityFeeLamports] in lamports.
   /// When omitted, it uses `WalletConfig.priorityFeeLamports`. The fee is
   /// written into the v1 message header before the application signs it.
   Future<PreparedTransaction?> prepareRegistration({
     bool enableMerging = false,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _prepare(
       _wallet.prepareRegistration(
         enableMerging: enableMerging,
+        feePayer: feePayer,
         priorityFeeLamports: priorityFeeLamports,
       ),
     ),
@@ -445,21 +451,27 @@ class SprWallet {
   /// deposit, its asset, its amount and this account are public.
   ///
   /// The first deposit of a mint into the pool also creates the mint's
-  /// registry entry and vault, in the same transaction, and this account pays
-  /// their rent: `Operation.deposit` then has `createsSplInterface` set, for
-  /// the approval screen. A pool whose protocol config lets only its
-  /// authority do that fails with [WalletError.assetNotSupported] before
-  /// anything is built. Two first deposits of one mint prepared at the same
-  /// time both create them, so the second to land fails.
+  /// registry entry and vault, in the same transaction: `Operation.deposit`
+  /// then has `createsSplInterface` set, for the approval screen. A pool
+  /// whose protocol config lets only its authority do that fails with
+  /// [WalletError.assetNotSupported] before anything is built. Two first
+  /// deposits of one mint prepared at the same time both create them, so
+  /// the second to land fails.
+  /// [feePayer] (a Solana public key, such as the application's backend)
+  /// pays the network fee and the setup's rent instead of
+  /// [solanaPublicKey]. This account still signs as depositor, so
+  /// [PreparedTransaction.signers] is then `[feePayer, solanaPublicKey]`.
   Future<PreparedTransaction> prepareDeposit(
     BigInt amount, {
     String? mint,
+    String? feePayer,
     BigInt? priorityFeeLamports,
   }) => _serial(
     () => _prepare(
       _wallet.prepareDeposit(
         mint: mint,
         amount: amount,
+        feePayer: feePayer,
         priorityFeeLamports: priorityFeeLamports,
       ),
     ),
